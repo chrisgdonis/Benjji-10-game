@@ -219,78 +219,108 @@ function sneaker(x, y) {
 }
 
 function drawBenjji(x, y) {
-  const s = Math.sin(hero.walk) * 9;
+  const s = hero.y < GROUND ? 0 : Math.sin(hero.walk) * 9;
   const air = hero.y < GROUND;
+  const breathe = Math.sin(Date.now() / 450) * 0.6;
+  const SHADE = '#e0b089', HAIR = '#5a3216', HAIR_LIGHT = '#8a5530';
   ctx.save();
   ctx.translate(x, y);
   ctx.scale(hero.face * SCALE, SCALE);
 
-  // back arm (a little darker because it's behind him)
-  seg(-11, -80, -13 - s / 3, -64, 8, '#dcdcd8');
-  seg(-13 - s / 3, -64, -12 - s / 2, -52, 6.5, '#e2b48c');
-  hand(-12 - s / 2, -49, Math.PI / 2, '#e2b48c');
+  // back arm (darker because it's behind him)
+  seg(-12, -78, -15 - s / 3, -63, 8.5, '#e2e2dd');
+  seg(-15 - s / 3, -63, -14 - s / 2, -51, 6.5, SHADE);
+  hand(-14 - s / 2, -48, Math.PI / 2, SHADE);
 
-  // legs: olive cargo pants
-  const backFoot = air ? -6 : -6 - s, frontFoot = air ? 8 : 6 + s;
-  seg(-5, -46, backFoot, -9, 12, '#46542c');
+  // legs: green cargo pants
+  const backFoot = air ? -7 : -6 - s, frontFoot = air ? 8 : 6 + s;
+  seg(-5, -46, backFoot, -9, 12.5, '#4a5a2d');
   sneaker(backFoot, 0);
-  seg(5, -46, frontFoot, -9, 12, '#56673a');
-  shape('#4a5a2e', () => ctx.rect(frontFoot / 2 + 3, -36, 7, 7)); // cargo pocket
+  seg(5, -46, frontFoot, -9, 12.5, '#5b6e37');
+  shape('#4e602f', () => ctx.rect(frontFoot / 2 + 2.5, -34, 8, 8)); // cargo pocket
+  ctx.strokeStyle = LINE; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(frontFoot / 2 + 2.5, -31.5); ctx.lineTo(frontFoot / 2 + 10.5, -31.5); ctx.stroke();
   sneaker(frontFoot, 0);
 
-  // body: white T-shirt with the black stripe down the middle
-  shape('#f7f7f4', () => {
-    ctx.moveTo(-15, -86); ctx.quadraticCurveTo(0, -91, 15, -86);
-    ctx.lineTo(16, -46); ctx.lineTo(-16, -46);
-  });
-  ctx.fillStyle = '#1b1b1b'; ctx.fillRect(-3, -88, 7, 42);
-  ctx.fillStyle = '#e4e4df'; ctx.fillRect(-15, -84, 4, 38); // shade
-  // collar
+  // white T-shirt with the black stripe down the middle
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(-15, -82 + breathe); ctx.quadraticCurveTo(0, -87 + breathe, 15, -82 + breathe);
+  ctx.lineTo(16, -48); ctx.quadraticCurveTo(0, -46, -16, -48); ctx.closePath();
+  ctx.fillStyle = '#f8f8f5'; ctx.fill();
+  ctx.clip();
+  ctx.fillStyle = '#e3e3de'; ctx.fillRect(-16, -86, 5, 40);           // shadow on the back side
+  ctx.fillStyle = '#1b1b1b'; ctx.fillRect(-3.5, -90, 7.5, 44);        // the stripe
+  ctx.restore();
   ctx.strokeStyle = LINE; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.arc(1, -89, 5, 0.1 * Math.PI, 0.9 * Math.PI); ctx.stroke();
-  // belt line
-  ctx.fillStyle = '#3a4524'; ctx.fillRect(-16, -48, 32, 4);
+  ctx.beginPath();
+  ctx.moveTo(-15, -82 + breathe); ctx.quadraticCurveTo(0, -87 + breathe, 15, -82 + breathe);
+  ctx.lineTo(16, -48); ctx.quadraticCurveTo(0, -46, -16, -48); ctx.closePath(); ctx.stroke();
+  ctx.strokeStyle = '#cfcfc8'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(8, -70); ctx.quadraticCurveTo(11, -64, 9, -58); ctx.stroke(); // shirt fold
 
   // neck
-  seg(1, -90, 1, -95, 8, SKIN);
+  seg(1, -86, 1, -92, 8, SHADE);
 
-  // head: a bit rounder and bigger, so he looks younger
-  shape(SKIN, () => ctx.ellipse(3, -113, 18, 20, 0, 0, Math.PI * 2));
-  shape(SKIN, () => ctx.ellipse(-10, -111, 4, 6, 0, 0, Math.PI * 2)); // ear
-  // eyes: big and green
-  [[6, 4, 5], [16, 3.4, 4.4]].forEach(([ex, rx, ry]) => {
-    shape('#fff', () => ctx.ellipse(ex, -114, rx, ry, 0, 0, Math.PI * 2));
-    ctx.fillStyle = '#35a84a'; ctx.beginPath(); ctx.arc(ex + 1, -113.5, rx * 0.75, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#0d0d0d'; ctx.beginPath(); ctx.arc(ex + 1.2, -113.5, rx * 0.35, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(ex + 2, -115, 0.9, 0, Math.PI * 2); ctx.fill();
+  // hair at the back of his head
+  shape(HAIR, () => ctx.ellipse(1, -114, 21, 19, 0, 0, Math.PI * 2));
+
+  // round face: big head, small chin, so he looks younger
+  shape(SKIN, () => {
+    ctx.moveTo(-12, -116); ctx.quadraticCurveTo(-14, -96, 2, -91);
+    ctx.quadraticCurveTo(18, -90, 22, -104); ctx.quadraticCurveTo(24, -116, 18, -122);
+    ctx.lineTo(-8, -124);
   });
-  // eyebrows
-  ctx.strokeStyle = '#4a2a14'; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(2, -121); ctx.lineTo(9, -122); ctx.moveTo(13, -121.5); ctx.lineTo(19, -121); ctx.stroke();
-  // nose and a confident smile
+  shape(SKIN, () => ctx.ellipse(-10, -108, 4, 5.5, 0, 0, Math.PI * 2)); // ear
+  ctx.strokeStyle = SHADE; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.arc(-10, -108, 2, -1, 1.5); ctx.stroke();
+
+  // big green eyes with a thick top line
+  [[7, 4.6, 5.6], [17.5, 3.8, 5]].forEach(([ex, rx, ry]) => {
+    shape('#fff', () => ctx.ellipse(ex, -108, rx, ry, 0, 0, Math.PI * 2));
+    ctx.fillStyle = '#2f9e44'; ctx.beginPath(); ctx.arc(ex + 1.2, -107.5, rx * 0.72, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#7fd36a'; ctx.beginPath(); ctx.arc(ex + 1.2, -106.5, rx * 0.4, 0, Math.PI); ctx.fill();
+    ctx.fillStyle = '#0d0d0d'; ctx.beginPath(); ctx.arc(ex + 1.4, -107.5, rx * 0.33, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(ex + 2.4, -109.5, 1.1, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#1b1b1b'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(ex, -108, rx, ry, 0, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke();
+  });
+  // thick, sure-of-himself eyebrows
+  ctx.strokeStyle = '#3d220e'; ctx.lineWidth = 2.4; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(2, -115.5); ctx.quadraticCurveTo(7, -118, 11, -116.5); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(14.5, -116.5); ctx.quadraticCurveTo(18, -118, 21, -116); ctx.stroke();
+  // small nose and a cheeky half smile
   ctx.strokeStyle = '#b07a55'; ctx.lineWidth = 1.3;
-  ctx.beginPath(); ctx.moveTo(20, -110); ctx.quadraticCurveTo(22, -107, 19, -106); ctx.stroke();
-  ctx.strokeStyle = LINE; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.moveTo(9, -101); ctx.quadraticCurveTo(14, -98, 18, -102); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(21.5, -104); ctx.quadraticCurveTo(23.5, -101, 20.5, -100); ctx.stroke();
+  ctx.strokeStyle = LINE; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.moveTo(10, -96.5); ctx.quadraticCurveTo(15, -94, 19.5, -98.5); ctx.stroke();
+  ctx.fillStyle = 'rgba(230,120,110,0.25)';
+  ctx.beginPath(); ctx.ellipse(5, -100, 3.5, 2, 0, 0, Math.PI * 2); ctx.fill(); // rosy cheek
 
-  // spiky brown hair swept to the front
-  shape('#5c3317', () => {
-    ctx.moveTo(-15, -103); ctx.lineTo(-18, -117); ctx.lineTo(-13, -129); ctx.lineTo(-1, -136);
-    ctx.lineTo(13, -134); ctx.lineTo(24, -127); ctx.lineTo(23, -119); ctx.lineTo(19, -123);
-    ctx.lineTo(16, -117); ctx.lineTo(12, -123); ctx.lineTo(7, -118); ctx.lineTo(3, -124);
-    ctx.lineTo(-3, -120); ctx.lineTo(-5, -110); ctx.lineTo(-9, -103);
+  // his famous hair: thick on top, bangs swooping forward over the forehead
+  shape(HAIR, () => {
+    ctx.moveTo(-19, -104); ctx.quadraticCurveTo(-24, -126, -6, -134);
+    ctx.quadraticCurveTo(12, -139, 22, -130); ctx.quadraticCurveTo(28, -124, 27, -114);
+    ctx.lineTo(22, -119); ctx.lineTo(20, -112); ctx.lineTo(15, -119);
+    ctx.lineTo(11, -113); ctx.lineTo(7, -120); ctx.lineTo(2, -116);
+    ctx.lineTo(-2, -121); ctx.quadraticCurveTo(-8, -114, -8, -104);
+    ctx.quadraticCurveTo(-13, -100, -19, -104);
   });
-  ctx.strokeStyle = '#8a5530'; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.moveTo(-8, -129); ctx.quadraticCurveTo(4, -134, 16, -130); ctx.stroke();
+  ctx.strokeStyle = HAIR_LIGHT; ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.moveTo(-14, -126); ctx.quadraticCurveTo(0, -134, 14, -130);
+  ctx.moveTo(-4, -126); ctx.quadraticCurveTo(10, -129, 20, -122);
+  ctx.stroke();
 
-  // front arm, bent forward to show off the watch
-  seg(11, -80, 15, -64, 8, '#f7f7f4');
-  seg(15, -64, 29, -58, 6.5, SKIN);
-  hand(33, -57, -0.3, SKIN);
-  // the watch: chunky band with the hourglass face
-  shape('#2b2b2b', () => ctx.rect(23, -63, 7, 10));
-  shape('#7a7a7a', () => ctx.rect(22, -62, 9, 2));
-  hourglass(26.5, -58, 5.5, omni());
+  // front arm, bent forward to show off the watch on his wrist
+  seg(11, -78, 15, -64, 8.5, '#f8f8f5');
+  seg(15, -64, 29, -59, 6.5, SKIN);
+  hand(33, -58, -0.3, SKIN);
+  // the watch: chunky black and white band, round grey dial, green hourglass
+  shape('#1e1e1e', () => ctx.rect(21.5, -64.5, 9, 11));
+  shape('#e8e8e8', () => ctx.rect(21.5, -63, 9, 2.5));
+  shape('#9aa0a6', () => ctx.arc(26, -59, 7.5, 0, Math.PI * 2));
+  hourglass(26, -59, 5.5, omni());
 
   ctx.restore();
 }
