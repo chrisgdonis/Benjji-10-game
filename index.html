@@ -20,13 +20,14 @@
 </head>
 <body>
 <canvas id="game" width="800" height="450"></canvas>
-<div id="hud">Benjji — arrows to move, ↑ to jump, W (or the green button) to use the watch</div>
+<div id="hud">Benjji · Y to pick an alien, W to go hero</div>
 <div class="pad" id="left">
   <button data-key="left">◀</button>
   <button data-key="right">▶</button>
 </div>
 <div class="pad" id="right">
   <button data-key="up">▲</button>
+  <button data-key="dial">Y</button>
   <button id="watchBtn" data-key="watch">WATCH</button>
 </div>
 <script>
@@ -42,43 +43,79 @@ function fit() {
 }
 addEventListener('resize', fit); fit();
 
-// The watch's aliens. Each one changes how Benjji moves.
+// The watch's aliens: the first ten from the show. Each one changes how Benjji moves.
 const ALIENS = [
-  { name: 'Heatblast',   draw: drawHeatblast,   speed: 5,  jump: 13, size: 1.0 },
-  { name: 'XLR8',        draw: drawXLR8,        speed: 12, jump: 12, size: 0.95 },
-  { name: 'Four Arms',   draw: drawFourArms,    speed: 3.5, jump: 10, size: 1.3 },
+  { name: 'Heatblast',   draw: drawHeatblast,   speed: 5,   jump: 13, size: 1.0 },
+  { name: 'Wildmutt',    draw: drawWildmutt,    speed: 8,   jump: 14, size: 1.0 },
   { name: 'Diamondhead', draw: drawDiamondhead, speed: 4.5, jump: 11, size: 1.05 },
+  { name: 'XLR8',        draw: drawXLR8,        speed: 12,  jump: 12, size: 0.95 },
+  { name: 'Grey Matter', draw: drawGreyMatter,  speed: 3,   jump: 9,  size: 0.45 },
+  { name: 'Four Arms',   draw: drawFourArms,    speed: 3.5, jump: 10, size: 1.3 },
+  { name: 'Stinkfly',    draw: drawStinkfly,    speed: 6,   jump: 10, size: 0.95, fly: true },
+  { name: 'Ripjaws',     draw: drawRipjaws,     speed: 4,   jump: 11, size: 1.05 },
+  { name: 'Upgrade',     draw: drawUpgrade,     speed: 5,   jump: 12, size: 1.0 },
+  { name: 'Ghostfreak',  draw: drawGhostfreak,  speed: 5,   jump: 10, size: 1.05, fly: true },
 ];
-const HERO_TIME = 600; // frames (~10 seconds)
+// Like the show: an alien lasts 10 minutes, then the watch turns red and has to recharge.
+const HERO_MS = 10 * 60 * 1000;
+const RECHARGE_MS = 5 * 1000;
 
-const hero = { x: 120, y: GROUND, vy: 0, face: 1, alien: null, timer: 0, dial: 0, walk: 0 };
+const hero = { x: 120, y: GROUND, vy: 0, face: 1, alien: null, until: 0, recharge: 0, dial: 0, walk: 0 };
 const keys = {};
 
+// W / WATCH: press once to go hero, press again to change back.
 function useWatch() {
-  if (hero.alien) return;
+  if (hero.alien) return changeBack(false);
+  if (Date.now() < hero.recharge) return;
   hero.alien = ALIENS[hero.dial];
-  hero.dial = (hero.dial + 1) % ALIENS.length;
-  hero.timer = HERO_TIME;
+  hero.until = Date.now() + HERO_MS;
   flash = 20;
 }
 
+// Y: turn the dial to pick an alien, or change back if already an alien.
+function dial() {
+  if (hero.alien) return changeBack(false);
+  hero.dial = (hero.dial + 1) % ALIENS.length;
+}
+
+function changeBack(timedOut) {
+  hero.alien = null;
+  if (timedOut) hero.recharge = Date.now() + RECHARGE_MS;
+  flash = 20;
+}
+
+// The watch glows green, blinks red in the last 10 seconds, and stays red while recharging.
+function omni() {
+  const now = Date.now();
+  if (now < hero.recharge) return '#ff3030';
+  if (hero.alien && hero.until - now < 10000) return Math.floor(now / 250) % 2 ? '#ff3030' : '#39ff6a';
+  return '#39ff6a';
+}
+
+const ACTIONS = { watch: useWatch, dial };
+const KEYMAP = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ' ': 'up', w: 'watch', W: 'watch', y: 'dial', Y: 'dial' };
 addEventListener('keydown', e => {
-  const k = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ' ': 'up', w: 'watch', W: 'watch' }[e.key];
+  const k = KEYMAP[e.key];
   if (!k) return;
   e.preventDefault();
-  if (k === 'watch') useWatch(); else keys[k] = true;
+  if (ACTIONS[k]) { if (!e.repeat) ACTIONS[k](); } else keys[k] = true;
 });
 addEventListener('keyup', e => {
-  const k = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ' ': 'up' }[e.key];
+  const k = KEYMAP[e.key];
   if (k) keys[k] = false;
 });
 document.querySelectorAll('[data-key]').forEach(b => {
   const k = b.dataset.key;
-  b.addEventListener('pointerdown', e => { e.preventDefault(); if (k === 'watch') useWatch(); else keys[k] = true; });
+  b.addEventListener('pointerdown', e => { e.preventDefault(); if (ACTIONS[k]) ACTIONS[k](); else keys[k] = true; });
   ['pointerup', 'pointerleave', 'pointercancel'].forEach(t => b.addEventListener(t, () => keys[k] = false));
 });
 
 let flash = 0;
+
+function clock(ms) {
+  const sec = Math.ceil(ms / 1000);
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+}
 
 function update() {
   const a = hero.alien;
@@ -87,18 +124,20 @@ function update() {
   if (keys.left)  { hero.x -= speed; hero.face = -1; moving = true; }
   if (keys.right) { hero.x += speed; hero.face = 1;  moving = true; }
   hero.x = Math.max(50, Math.min(W - 50, hero.x));
-  if (keys.up && hero.y >= GROUND) hero.vy = -jump;
+  if (keys.up && a && a.fly) hero.vy = Math.max(hero.vy - 1.2, -6); // flyers keep going up
+  else if (keys.up && hero.y >= GROUND) hero.vy = -jump;
   hero.vy += 0.6;
-  hero.y = Math.min(GROUND, hero.y + hero.vy);
+  hero.y = Math.max(170, Math.min(GROUND, hero.y + hero.vy));
   if (hero.y >= GROUND) hero.vy = 0;
   hero.walk = moving ? hero.walk + 0.25 : 0;
 
-  if (a && --hero.timer <= 0) { hero.alien = null; flash = 20; }
+  const now = Date.now();
+  if (a && now >= hero.until) changeBack(true);
   if (flash) flash--;
 
-  hud.textContent = a
-    ? `${a.name}! Back to Benjji in ${Math.ceil(hero.timer / 60)}s`
-    : `Benjji — next alien: ${ALIENS[hero.dial].name}. Press W or WATCH!`;
+  if (hero.alien) hud.textContent = `${a.name}! ${clock(hero.until - now)} left · W or Y to change back`;
+  else if (now < hero.recharge) hud.textContent = `Watch recharging… ${Math.ceil((hero.recharge - now) / 1000)}s`;
+  else hud.textContent = `Benjji · alien ${hero.dial + 1} of 10: ${ALIENS[hero.dial].name} · Y to pick, W to go hero!`;
 }
 
 // The hourglass symbol: two green triangles meeting in the middle.
@@ -223,7 +262,7 @@ function drawBenjji(x, y) {
   // the watch: chunky band with the hourglass face
   shape('#2b2b2b', () => ctx.rect(23, -63, 7, 10));
   shape('#7a7a7a', () => ctx.rect(22, -62, 9, 2));
-  hourglass(26.5, -58, 5.5, '#39ff6a');
+  hourglass(26.5, -58, 5.5, omni());
 
   ctx.restore();
 }
@@ -258,7 +297,7 @@ function drawHeatblast(s, t) {
   ctx.moveTo(-4, -46); ctx.lineTo(0, -54); ctx.lineTo(5, -46);
   ctx.moveTo(-5, -30); ctx.lineTo(-7, -20); ctx.moveTo(6, -32); ctx.lineTo(8, -18);
   ctx.stroke();
-  hourglass(0, -68, 7, '#39ff6a');
+  hourglass(0, -68, 7, omni());
   // head made of fire, flickering
   const flick = i => Math.sin(t * 1.3 + i * 1.7) * 4;
   shape('#ff6a1a', () => {
@@ -303,7 +342,7 @@ function drawXLR8(s, t) {
   // body leaning forward
   shape(black, () => ctx.ellipse(4, -72, 15, 24, 0.35, 0, Math.PI * 2));
   shape(blue, () => ctx.ellipse(9, -74, 7, 17, 0.35, 0, Math.PI * 2));
-  hourglass(6, -76, 6, '#39ff6a');
+  hourglass(6, -76, 6, omni());
   // arms with claws
   seg(4, -88, 18, -76, 6, black);
   seg(18, -76, 30, -80, 5, blue);
@@ -346,7 +385,7 @@ function drawFourArms(s, t) {
   ctx.stroke();
   // white belt with the watch symbol
   shape('#f2f2f2', () => ctx.rect(-15, -54, 34, 8));
-  hourglass(2, -50, 6, '#39ff6a');
+  hourglass(2, -50, 6, omni());
   // small head on big shoulders, with four yellow eyes
   shape(red, () => ctx.ellipse(4, -108, 12, 12, 0, 0, Math.PI * 2));
   ctx.fillStyle = '#ffd400';
@@ -376,7 +415,7 @@ function drawDiamondhead(s, t) {
   shape('#1c1c1c', () => { ctx.moveTo(-16, -88); ctx.lineTo(16, -88); ctx.lineTo(16, -46); ctx.lineTo(-16, -46); });
   ctx.fillStyle = '#f2f2f2'; ctx.beginPath();
   ctx.moveTo(-4, -88); ctx.lineTo(6, -88); ctx.lineTo(-2, -46); ctx.lineTo(-10, -46); ctx.fill();
-  hourglass(6, -70, 6, '#39ff6a');
+  hourglass(6, -70, 6, omni());
   // crystal shards on the shoulders
   crystal([[-18, -86], [-26, -104], [-10, -88]], gem);
   crystal([[12, -88], [24, -102], [18, -84]], gemDark);
@@ -392,6 +431,167 @@ function drawDiamondhead(s, t) {
   // front arm ending in a crystal blade
   seg(13, -84, 24, -66, 9, gem);
   crystal([[20, -68], [28, -66], [38, -58]], gemLight);
+}
+
+function drawWildmutt(s, t) {
+  const fur = '#f08a24', furDark = '#c2621a';
+  // tail and quills along the back
+  seg(-30, -44, -42, -52, 6, fur);
+  for (let i = 0; i < 5; i++) shape(furDark, () => { ctx.moveTo(-24 + i * 10, -50); ctx.lineTo(-20 + i * 10, -64); ctx.lineTo(-16 + i * 10, -50); });
+  // four legs, running on all fours
+  [[-22, -s, furDark], [16, s, furDark], [-16, s, fur], [22, -s, fur]].forEach(([lx, sw, c]) => {
+    seg(lx, -36, lx + sw, -6, 9, c);
+    shape(c, () => ctx.ellipse(lx + sw + 3, -3, 6, 3.5, 0, 0, Math.PI * 2));
+  });
+  shape(fur, () => ctx.ellipse(0, -40, 32, 15, 0, 0, Math.PI * 2));
+  ctx.strokeStyle = furDark; ctx.lineWidth = 2;
+  ctx.beginPath(); for (let i = 0; i < 3; i++) { ctx.moveTo(-14 + i * 10, -54); ctx.lineTo(-18 + i * 10, -44); } ctx.stroke();
+  hourglass(14, -38, 6, omni());
+  // head with no eyes, gills and a big toothy mouth
+  shape(fur, () => ctx.ellipse(36, -48, 15, 11, 0.2, 0, Math.PI * 2));
+  shape('#3a0d0d', () => { ctx.moveTo(36, -46); ctx.lineTo(52, -50); ctx.lineTo(50, -38); });
+  ctx.fillStyle = '#fff';
+  for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.moveTo(40 + i * 4, -47.5 - i); ctx.lineTo(42 + i * 4, -44 - i); ctx.lineTo(44 + i * 4, -48.5 - i); ctx.fill(); }
+  ctx.strokeStyle = furDark; ctx.lineWidth = 1.5;
+  ctx.beginPath(); for (let i = 0; i < 3; i++) { ctx.moveTo(26 + i * 3, -56); ctx.lineTo(24 + i * 3, -46); } ctx.stroke();
+}
+
+function drawGreyMatter(s, t) {
+  const grey = '#9aa3ab', greyDark = '#737c84';
+  seg(-6, -40, -8 - s, -8, 7, greyDark);
+  seg(6, -40, 8 + s, -8, 7, grey);
+  shape(greyDark, () => ctx.ellipse(-6 - s, -4, 7, 4, 0, 0, Math.PI * 2));
+  shape(grey, () => ctx.ellipse(10 + s, -4, 7, 4, 0, 0, Math.PI * 2));
+  // small body in a black and white suit
+  shape('#1c1c1c', () => ctx.ellipse(0, -50, 13, 16, 0, 0, Math.PI * 2));
+  ctx.fillStyle = '#f2f2f2'; ctx.fillRect(-2, -64, 5, 28);
+  hourglass(0, -46, 6, omni());
+  seg(10, -58, 20, -46, 5, grey);
+  // big head with huge eyes and a wide frog mouth
+  shape(grey, () => ctx.ellipse(3, -84, 22, 19, 0, 0, Math.PI * 2));
+  [[0, -88], [16, -88]].forEach(([ex, ey]) => {
+    shape('#c8f05a', () => ctx.ellipse(ex, ey, 7, 8, 0, 0, Math.PI * 2));
+    ctx.fillStyle = '#0d0d0d'; ctx.beginPath(); ctx.ellipse(ex + 2, ey, 2.5, 4, 0, 0, Math.PI * 2); ctx.fill();
+  });
+  ctx.strokeStyle = '#3a3f44'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(-6, -74); ctx.quadraticCurveTo(8, -68, 22, -76); ctx.stroke();
+}
+
+function drawStinkfly(s, t) {
+  ctx.translate(0, -24 + Math.sin(t / 2) * 3); // hovering
+  const green = '#9ccf3a', dark = '#4f7a1a';
+  // buzzing wings
+  const flap = Math.sin(t * 4) * 0.35;
+  ctx.globalAlpha = 0.55;
+  [[-6, -0.9], [-2, -0.5]].forEach(([wx, base]) => {
+    ctx.save(); ctx.translate(wx, -70); ctx.rotate(base + flap);
+    shape('#e8ffd0', () => ctx.ellipse(-26, 0, 28, 8, 0, 0, Math.PI * 2));
+    ctx.restore();
+  });
+  ctx.globalAlpha = 1;
+  // striped tail with a stinger
+  shape(green, () => ctx.ellipse(-24, -58, 20, 10, 0.3, 0, Math.PI * 2));
+  ctx.strokeStyle = dark; ctx.lineWidth = 2.5;
+  ctx.beginPath(); for (let i = 0; i < 3; i++) { ctx.moveTo(-34 + i * 8, -66 + i * 2); ctx.lineTo(-30 + i * 8, -50 + i * 2); } ctx.stroke();
+  shape('#2b2b2b', () => { ctx.moveTo(-42, -52); ctx.lineTo(-54, -44); ctx.lineTo(-40, -46); });
+  // dangling legs
+  for (let i = 0; i < 3; i++) seg(-4 + i * 7, -58, -6 + i * 7 + Math.sin(t + i) * 2, -36, 3, dark);
+  // body and head
+  shape(green, () => ctx.ellipse(2, -68, 13, 12, 0, 0, Math.PI * 2));
+  hourglass(4, -66, 6, omni());
+  shape(green, () => ctx.ellipse(18, -82, 11, 9, 0, 0, Math.PI * 2));
+  // four eyes on stalks
+  [[16, -100], [24, -102], [30, -96], [10, -97]].forEach(([ex, ey], i) => {
+    seg(18 + i, -88, ex, ey, 2.5, dark);
+    shape('#ffe14d', () => ctx.arc(ex, ey, 3.5, 0, Math.PI * 2));
+    ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(ex + 1, ey, 1.4, 0, Math.PI * 2); ctx.fill();
+  });
+  ctx.strokeStyle = dark; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(22, -78); ctx.lineTo(28, -78); ctx.stroke();
+}
+
+function drawRipjaws(s, t) {
+  const skin = '#6f8f98', dark = '#4b6870', belly = '#d8e2dc';
+  seg(-11, -82, -14 - s / 3, -54, 8, dark);
+  seg(-5, -46, -6 - s, -8, 12, dark);
+  seg(5, -46, 6 + s, -8, 12, skin);
+  shape(dark, () => ctx.ellipse(-4 - s, -3, 9, 4, 0, 0, Math.PI * 2));
+  shape(skin, () => ctx.ellipse(8 + s, -3, 9, 4, 0, 0, Math.PI * 2));
+  // black and white suit
+  shape('#1c1c1c', () => { ctx.moveTo(-16, -88); ctx.lineTo(16, -88); ctx.lineTo(15, -46); ctx.lineTo(-15, -46); });
+  shape('#f2f2f2', () => ctx.rect(-15, -52, 30, 6));
+  hourglass(0, -49, 5, omni());
+  // fin on the back
+  shape(dark, () => { ctx.moveTo(-14, -90); ctx.lineTo(-26, -108); ctx.lineTo(-8, -98); });
+  // big head with a huge underbite full of teeth
+  shape(skin, () => ctx.ellipse(4, -110, 18, 15, 0, 0, Math.PI * 2));
+  shape(belly, () => { ctx.moveTo(-8, -102); ctx.quadraticCurveTo(14, -86, 30, -104); ctx.lineTo(26, -106); ctx.quadraticCurveTo(12, -96, -4, -104); });
+  ctx.fillStyle = '#fff';
+  for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.moveTo(i * 5, -103 + i * 0.3); ctx.lineTo(2.5 + i * 5, -109); ctx.lineTo(5 + i * 5, -102.5 + i * 0.3); ctx.fill(); }
+  ctx.fillStyle = '#fffbe0'; ctx.beginPath(); ctx.ellipse(12, -116, 3, 2.5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(13, -116, 1.2, 0, Math.PI * 2); ctx.fill();
+  // glowing lure on his head
+  ctx.strokeStyle = dark; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(4, -124); ctx.quadraticCurveTo(10, -138, 22, -132); ctx.stroke();
+  shape('#ffe14d', () => ctx.arc(23, -130, 3.5, 0, Math.PI * 2));
+  seg(13, -82, 24, -62, 8, skin);
+  hand(27, -60, 0.4, skin);
+}
+
+function drawUpgrade(s, t) {
+  const black = '#141414', glow = '#39ff6a';
+  const lines = (pts) => { ctx.strokeStyle = glow; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); pts.slice(1).forEach(p => ctx.lineTo(p[0], p[1])); ctx.stroke(); };
+  seg(-11, -82, -14 - s / 3, -54, 8, black);
+  seg(-5, -46, -6 - s, -6, 11, black);
+  seg(5, -46, 6 + s, -6, 11, black);
+  lines([[6 + s / 2, -40], [6 + s, -10]]);
+  // smooth body with glowing circuit lines
+  shape(black, () => ctx.ellipse(0, -66, 16, 24, 0, 0, Math.PI * 2));
+  lines([[-10, -84], [-10, -70], [-4, -64], [-4, -48]]);
+  lines([[10, -84], [10, -72], [4, -66]]);
+  lines([[-14, -60], [-8, -56], [12, -56]]);
+  hourglass(2, -72, 6, omni());
+  // round head with one big eye
+  shape(black, () => ctx.ellipse(4, -104, 15, 16, 0, 0, Math.PI * 2));
+  shape(glow, () => ctx.arc(8, -106, 8, 0, Math.PI * 2));
+  ctx.fillStyle = black; ctx.beginPath(); ctx.arc(8, -106, 5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(9, -106, 2.2, 0, Math.PI * 2); ctx.fill();
+  lines([[-8, -114], [-4, -120], [6, -120]]);
+  seg(12, -82, 24, -62, 8, black);
+  hand(27, -60, 0.4, '#2a2a2a');
+}
+
+function drawGhostfreak(s, t) {
+  ctx.translate(0, -16 + Math.sin(t / 3) * 4); // floating
+  const pale = '#dfe4ea', stripe = '#2a2433';
+  ctx.globalAlpha = 0.88;
+  // ghostly tail instead of legs
+  shape(pale, () => {
+    ctx.moveTo(-15, -60); ctx.lineTo(15, -60);
+    ctx.quadraticCurveTo(10, -30, -2 + Math.sin(t) * 4, -6);
+    ctx.quadraticCurveTo(-10, -30, -15, -60);
+  });
+  seg(-12, -84, -20, -60 + Math.sin(t) * 3, 7, pale);
+  shape(pale, () => ctx.ellipse(0, -74, 16, 20, 0, 0, Math.PI * 2));
+  ctx.strokeStyle = stripe; ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(-12, -86); ctx.quadraticCurveTo(-4, -76, -10, -60);
+  ctx.moveTo(12, -84); ctx.quadraticCurveTo(4, -72, 10, -58);
+  ctx.moveTo(-6, -44); ctx.quadraticCurveTo(0, -30, -4, -18);
+  ctx.stroke();
+  hourglass(0, -76, 6, omni());
+  // head with one big eye
+  shape(pale, () => ctx.ellipse(4, -106, 15, 17, 0, 0, Math.PI * 2));
+  ctx.strokeStyle = stripe; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(-8, -118); ctx.quadraticCurveTo(0, -110, -6, -98); ctx.stroke();
+  shape('#ffffff', () => ctx.ellipse(10, -108, 7, 6, 0, 0, Math.PI * 2));
+  ctx.fillStyle = '#7a1c8a'; ctx.beginPath(); ctx.arc(11, -108, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(11.5, -108, 1.8, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = stripe; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(6, -97); ctx.lineTo(16, -98); ctx.stroke();
+  seg(12, -84, 26, -70, 7, pale);
+  for (let i = 0; i < 3; i++) seg(26, -70, 33, -74 + i * 4, 2, pale);
+  ctx.globalAlpha = 1;
 }
 
 function draw() {
