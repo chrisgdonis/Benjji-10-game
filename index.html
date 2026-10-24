@@ -50,8 +50,8 @@ addEventListener('resize', fit); fit();
 // who were unlocked later. Each one moves differently and has its own powers:
 // P uses the power, O swaps to the next one.
 const ALIENS = [
-  { name: 'Heatblast',   draw: drawHeatblast,   speed: 5,   jump: 13, size: 1.0,
-    powers: [['Fireballs', fireballs], ['Flamethrower', flamethrower], ['Fire rocket jump', fireJump]] },
+  { name: 'Heatblast',   draw: drawHeatblast,   speed: 5,   jump: 13, size: 1.0,  fly: true,
+    powers: [['Fireballs', fireballs], ['Flamethrower', flamethrower], ['Fire rocket blast', fireJump]] },
   { name: 'Wildmutt',    draw: drawWildmutt,    speed: 8,   jump: 14, size: 1.0,
     powers: [['Super pounce', pounce], ['Claw slash', clawSlash], ['Mega roar', roar]] },
   { name: 'Diamondhead', draw: drawDiamondhead, speed: 4.5, jump: 11, size: 1.05,
@@ -60,20 +60,20 @@ const ALIENS = [
     powers: [['Speed dash', speedDash], ['Speed tornado', tornado], ['Tail whip', tailWhip]] },
   { name: 'Grey Matter', draw: drawGreyMatter,  speed: 3,   jump: 9,  size: 0.45,
     powers: [['Super brain', superBrain], ['Frog leap', frogLeap]] },
-  { name: 'Four Arms',   draw: drawFourArms,    speed: 3.5, jump: 10, size: 1.3,
+  { name: 'Four Arms',   draw: drawFourArms,    speed: 5, jump: 10, size: 1.3,
     powers: [['Ground smash', groundSmash], ['Thunder clap', thunderClap], ['Super jump slam', jumpSlam]] },
   { name: 'Stinkfly',    draw: drawStinkfly,    speed: 6,   jump: 10, size: 0.95, fly: true,
-    powers: [['Slime spit', slime], ['Stink cloud', stinkCloud], ['Stinger', stinger]] },
-  { name: 'Ripjaws',     draw: drawRipjaws,     speed: 4,   jump: 11, size: 1.05,
+    powers: [['Slime spit', slime], ['Sticky slime trap', stinkCloud], ['Stinger', stinger]] },
+  { name: 'Ripjaws',     draw: drawRipjaws,     speed: 3,   jump: 11, size: 1.05,
     powers: [['Mega chomp', chomp], ['Shark dive', sharkDive], ['Lure flash', lureFlash]] },
   { name: 'Upgrade',     draw: drawUpgrade,     speed: 5,   jump: 12, size: 1.0,
-    powers: [['Merge & control', merge], ['Laser beam', laser], ['Tech merge cannon', megaBlast], ['Goo stretch punch', stretchPunch]] },
+    powers: [['Merge & control', merge], ['Eye plasma beam', laser], ['Tech merge cannon', megaBlast], ['Goo stretch punch', stretchPunch]] },
   { name: 'Ghostfreak',  draw: drawGhostfreak,  speed: 5,   jump: 10, size: 1.05, fly: true,
-    powers: [['Go invisible', vanish], ['Ghost tentacles', tentacles], ['Scare', scare]] },
+    powers: [['Go invisible', vanish], ['Ghost tentacles', tentacles], ['Possess', merge]] },
   { name: 'Cannonbolt',  draw: drawCannonbolt,  speed: 4,   jump: 11, size: 1.1,
     powers: [['Cannonball roll', roll], ['Mega bounce', megaBounce]] },
   { name: 'Wildvine',    draw: drawWildvine,    speed: 5,   jump: 13, size: 1.05,
-    powers: [['Seed bombs', seedBombs], ['Vine whip', vineWhip], ['Vine swing', vineSwing]] },
+    powers: [['Fruit bombs', seedBombs], ['Smoke fruit bomb', smokeBomb], ['Vine whip', vineWhip], ['Vine swing', vineSwing]] },
   { name: 'Upchuck',     draw: drawUpchuck,     speed: 4,   jump: 10, size: 0.8,
     powers: [['Tongue grab: eat it!', eat], ['Spit explosive goo', spitGoo]] },
 ];
@@ -162,7 +162,7 @@ function update() {
   if (a && now >= hero.until) changeBack(true);
   if (flash) flash--;
 
-  if (hero.merged) hud.textContent = `Upgrade is controlling the ${MERGE[kindOf(hero.merged)].name}! · P: shoot · O: jump out · ${clock(hero.until - now)} left`;
+  if (hero.merged) hud.textContent = `${a.name} is ${a.name === 'Ghostfreak' ? 'possessing' : 'controlling'} the ${MERGE[kindOf(hero.merged)].name}! · P: shoot · O: jump out · ${clock(hero.until - now)} left`;
   else if (hero.alien) hud.textContent = `${a.name} · P: ${a.powers[hero.pw][0]} (${hero.pw + 1}/${a.powers.length}) · O swaps${a.name === 'Upchuck' ? ` · goo: ${hero.ammo}` : ''} · ${clock(hero.until - now)} left`;
   else if (now < hero.recharge) hud.textContent = `Watch recharging… ${Math.ceil((hero.recharge - now) / 1000)}s`;
   else hud.textContent = `Benjji · alien ${hero.dial + 1} of ${ALIENS.length}: ${ALIENS[hero.dial].name} · Y to pick, W to go hero, W again to change back`;
@@ -381,110 +381,120 @@ function drawHeatblast(s, t) {
 }
 
 function drawXLR8(s, t) {
-  const blue = '#1f4fc4', black = '#141824';
+  const black = '#121620', blue = '#2a6cf0';
   if (keys.left || keys.right) { // speed streaks
     ctx.strokeStyle = '#9fd0ff'; ctx.lineWidth = 2;
     for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(-70, -95 + i * 18); ctx.lineTo(-110 - (i % 2) * 20, -95 + i * 18); ctx.stroke(); }
   }
-  // long striped tail
-  const tail = [[-8, -58], [-24, -56], [-40, -50], [-56, -42], [-70, -36]];
-  for (let i = 0; i < tail.length - 1; i++) {
-    seg(tail[i][0], tail[i][1], tail[i + 1][0], tail[i + 1][1], 12 - i * 2.5, i % 2 ? blue : black);
-  }
-  // legs bend like a raptor's, with a ball on each foot
-  [[-4, -s, black], [5, s, blue]].forEach(([hx, sw, c]) => {
-    seg(hx, -50, hx - 8, -28, 10, c);
+  // long black tail with five blue stripes
+  const tail = [[-8, -58], [-24, -56], [-40, -50], [-56, -42], [-72, -36]];
+  for (let i = 0; i < tail.length - 1; i++) seg(tail[i][0], tail[i][1], tail[i + 1][0], tail[i + 1][1], 12 - i * 2.5, black);
+  ctx.strokeStyle = blue; ctx.lineWidth = 3;
+  [[-18, -57, 5], [-30, -54, 4.5], [-42, -50, 4], [-53, -44, 3], [-63, -40, 2.5]].forEach(([sx, sy, h]) => {
+    ctx.beginPath(); ctx.moveTo(sx - 1, sy - h); ctx.lineTo(sx + 1, sy + h); ctx.stroke();
+  });
+  // legs bend like a raptor's, with a black ball for each foot
+  [[-4, -s], [5, s]].forEach(([hx, sw]) => {
+    seg(hx, -50, hx - 8, -28, 10, black);
     seg(hx - 8, -28, hx + 2 + sw, -9, 7, black);
     shape('#2b2b2b', () => ctx.arc(hx + 2 + sw, -6, 6, 0, Math.PI * 2));
   });
-  // body leaning forward
+  // black body suit with a white stripe down the middle
   shape(black, () => ctx.ellipse(4, -72, 15, 24, 0.35, 0, Math.PI * 2));
-  shape(blue, () => ctx.ellipse(9, -74, 7, 17, 0.35, 0, Math.PI * 2));
-  hourglass(6, -76, 6, omni());
-  // arms with claws
+  ctx.fillStyle = '#f2f2f2'; ctx.beginPath(); ctx.ellipse(8, -73, 3, 21, 0.35, 0, Math.PI * 2); ctx.fill();
+  hourglass(5, -80, 6, omni());
+  // arms with three-fingered claws
   seg(4, -88, 18, -76, 6, black);
-  seg(18, -76, 30, -80, 5, blue);
-  ctx.strokeStyle = '#e8e8e8'; ctx.lineWidth = 1.5;
+  seg(18, -76, 30, -80, 5, black);
+  ctx.strokeStyle = '#d8d8d8'; ctx.lineWidth = 1.5;
   ctx.beginPath(); for (let i = 0; i < 3; i++) { ctx.moveTo(31, -80); ctx.lineTo(37, -84 + i * 3); } ctx.stroke();
-  // long head with the black visor
-  shape(blue, () => ctx.ellipse(20, -104, 17, 10, 0.15, 0, Math.PI * 2));
-  shape(black, () => { ctx.moveTo(6, -112); ctx.quadraticCurveTo(24, -120, 37, -104); ctx.lineTo(30, -102); ctx.quadraticCurveTo(20, -110, 6, -104); });
-  ctx.strokeStyle = '#6a8cff'; ctx.lineWidth = 1.2;
+  // long head: blue face and green eye under the blue visor, black lips
+  shape(black, () => ctx.ellipse(18, -104, 17, 10, 0.15, 0, Math.PI * 2));
+  shape(blue, () => ctx.ellipse(27, -103, 10, 7, 0.15, 0, Math.PI * 2));
+  ctx.fillStyle = '#5ee05e'; ctx.beginPath(); ctx.ellipse(28, -106, 3, 2, 0.1, 0, Math.PI * 2); ctx.fill();
+  ctx.save(); ctx.globalAlpha *= 0.6;
+  shape('#4d9bff', () => { ctx.moveTo(6, -112); ctx.quadraticCurveTo(24, -121, 37, -104); ctx.lineTo(30, -101); ctx.quadraticCurveTo(20, -109, 6, -104); });
+  ctx.restore();
+  ctx.strokeStyle = '#cfe4ff'; ctx.lineWidth = 1.2;
   ctx.beginPath(); ctx.moveTo(12, -112); ctx.quadraticCurveTo(22, -116, 30, -109); ctx.stroke();
-  ctx.strokeStyle = black; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.moveTo(22, -97); ctx.lineTo(34, -99); ctx.stroke();
+  ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(25, -97.5); ctx.lineTo(35, -99.5); ctx.stroke();
 }
 
 function drawFourArms(s, t) {
   const red = '#c8312a', redDark = '#9c231e';
+  // each arm ends in a fist in a black fingerless glove
   const arm = (sx, sy, ex, ey, hx, hy, c) => {
     seg(sx, sy, ex, ey, 11, c); seg(ex, ey, hx, hy, 10, c);
-    shape(c, () => ctx.arc(hx, hy + 3, 7, 0, Math.PI * 2));
+    shape('#1c1c1c', () => ctx.arc(hx, hy + 3, 7, 0, Math.PI * 2));
+    shape(c, () => ctx.ellipse(hx + 4, hy + 4, 3.5, 4.5, 0, 0, Math.PI * 2));
   };
-  // back arms
   arm(-18, -90, -26, -72, -24 - s / 3, -56, redDark);
   arm(-16, -74, -24, -58, -20 - s / 3, -44, redDark);
-  // legs in black pants, bare red feet
-  seg(-7, -46, -7 - s, -8, 15, '#1c1c1c');
-  seg(7, -46, 7 + s, -8, 15, '#262626');
-  shape(red, () => ctx.ellipse(-5 - s, -3, 9, 4, 0, 0, Math.PI * 2));
-  shape(red, () => ctx.ellipse(9 + s, -3, 9, 4, 0, 0, Math.PI * 2));
-  // huge chest with muscles
-  shape(red, () => {
+  // black pants with straps under bare red feet
+  seg(-7, -48, -7 - s, -8, 15, '#1c1c1c');
+  seg(7, -48, 7 + s, -8, 15, '#262626');
+  [[-5 - s, redDark], [9 + s, red]].forEach(([fx, c]) => {
+    shape(c, () => ctx.ellipse(fx, -3, 9, 4, 0, 0, Math.PI * 2));
+    ctx.fillStyle = '#1c1c1c'; ctx.fillRect(fx - 3, -6, 5, 6);
+  });
+  // white T-shirt with a black line down it, stretched over his huge chest
+  shape('#f4f4f1', () => {
     ctx.moveTo(-24, -96); ctx.quadraticCurveTo(2, -104, 26, -96);
-    ctx.lineTo(18, -50); ctx.lineTo(-14, -50);
+    ctx.lineTo(18, -48); ctx.lineTo(-14, -48);
   });
-  ctx.strokeStyle = redDark; ctx.lineWidth = 1.5;
+  ctx.fillStyle = '#1b1b1b'; ctx.fillRect(-1, -100, 5, 52);
+  ctx.strokeStyle = '#d6d6d0'; ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.moveTo(1, -94); ctx.lineTo(1, -54);
-  ctx.moveTo(-14, -80); ctx.quadraticCurveTo(-6, -76, 1, -80);
-  ctx.moveTo(16, -80); ctx.quadraticCurveTo(8, -76, 1, -80);
-  ctx.moveTo(-8, -66); ctx.lineTo(10, -66); ctx.moveTo(-6, -58); ctx.lineTo(10, -58);
+  ctx.moveTo(-14, -80); ctx.quadraticCurveTo(-7, -76, -2, -80);
+  ctx.moveTo(18, -80); ctx.quadraticCurveTo(11, -76, 5, -80);
+  ctx.moveTo(-8, -64); ctx.lineTo(-3, -64); ctx.moveTo(6, -64); ctx.lineTo(12, -64);
   ctx.stroke();
-  // white belt with the watch symbol
-  shape('#f2f2f2', () => ctx.rect(-15, -54, 34, 8));
-  hourglass(2, -50, 6, omni());
-  // small head on big shoulders, with four yellow eyes
-  shape(red, () => ctx.ellipse(4, -108, 12, 12, 0, 0, Math.PI * 2));
-  ctx.fillStyle = '#ffd400';
-  [[4, -113], [12, -113], [4, -106], [12, -106]].forEach(([ex, ey]) => {
-    ctx.beginPath(); ctx.ellipse(ex, ey, 2.6, 1.8, 0, 0, Math.PI * 2); ctx.fill();
+  // bald head, four orange-yellow eyes, black stripe from lip to chin
+  shape(red, () => ctx.ellipse(4, -110, 12, 13, 0, 0, Math.PI * 2));
+  ctx.fillStyle = '#ffb000';
+  [[4, -114, 3, 2.1], [12, -114, 2.8, 2], [5, -108, 2, 1.4], [12, -108, 1.9, 1.3]].forEach(([ex, ey, rx, ry]) => {
+    ctx.beginPath(); ctx.ellipse(ex, ey, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
   });
-  ctx.strokeStyle = '#5a1210'; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.moveTo(4, -100); ctx.lineTo(13, -100); ctx.stroke();
-  shape('#1c1c1c', () => { ctx.moveTo(-6, -116); ctx.quadraticCurveTo(-4, -124, 6, -121); ctx.lineTo(-2, -114); });
-  // front arms
+  ctx.strokeStyle = '#1b1b1b'; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.moveTo(4, -102); ctx.lineTo(14, -102); ctx.stroke();
+  ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(10, -101.5); ctx.lineTo(10, -97.5); ctx.stroke();
+  // front arms, with T-shirt sleeves
+  seg(20, -92, 24, -86, 13, '#f4f4f1');
   arm(20, -74, 30, -60, 34 + s / 3, -48, red);
   arm(22, -90, 32, -76, 38 + s / 3, -66, red);
+  // the watch symbol on his upper shoulder
+  hourglass(20, -93, 6, omni());
 }
 
 function drawDiamondhead(s, t) {
-  const gem = '#3fd18a', gemDark = '#1f9a62', gemLight = '#b6ffd9';
+  const gem = '#4fd1c5', gemDark = '#2a9d94', gemLight = '#c9fff8';
   const crystal = (pts, c) => shape(c, () => { ctx.moveTo(pts[0][0], pts[0][1]); pts.slice(1).forEach(p => ctx.lineTo(p[0], p[1])); });
+  // two big crystal shards on his back
+  crystal([[-12, -84], [-30, -112], [-8, -90]], gemDark);
+  crystal([[-14, -72], [-34, -92], [-10, -78]], gem);
   // back arm: crystal
   seg(-12, -84, -16 - s / 3, -58, 9, gemDark);
   crystal([[-20 - s / 3, -58], [-12 - s / 3, -58], [-16 - s / 3, -44]], gemDark);
-  // legs in a black suit, crystal feet
-  seg(-5, -46, -6 - s, -8, 12, '#1c1c1c');
-  seg(5, -46, 6 + s, -8, 12, '#262626');
+  // legs with crystal feet
+  seg(-5, -46, -6 - s, -8, 12, gemDark);
+  seg(5, -46, 6 + s, -8, 12, gem);
   crystal([[-12 - s, -1], [-6 - s, -10], [4 - s, -1]], gemDark);
   crystal([[0 + s, -1], [6 + s, -10], [16 + s, -1]], gem);
-  // black and white suit
-  shape('#1c1c1c', () => { ctx.moveTo(-16, -88); ctx.lineTo(16, -88); ctx.lineTo(16, -46); ctx.lineTo(-16, -46); });
-  ctx.fillStyle = '#f2f2f2'; ctx.beginPath();
-  ctx.moveTo(-4, -88); ctx.lineTo(6, -88); ctx.lineTo(-2, -46); ctx.lineTo(-10, -46); ctx.fill();
-  hourglass(6, -70, 6, omni());
-  // crystal shards on the shoulders
-  crystal([[-18, -86], [-26, -104], [-10, -88]], gem);
-  crystal([[12, -88], [24, -102], [18, -84]], gemDark);
-  // diamond head with a tall back spike
+  // sleeveless suit: one half black, one half white
+  shape('#f2f2f2', () => { ctx.moveTo(-16, -88); ctx.lineTo(1, -88); ctx.lineTo(1, -44); ctx.lineTo(-15, -44); });
+  shape('#1c1c1c', () => { ctx.moveTo(1, -88); ctx.lineTo(16, -88); ctx.lineTo(15, -44); ctx.lineTo(1, -44); });
+  // the watch symbol on a black patch on his shoulder
+  shape('#1c1c1c', () => ctx.arc(-9, -82, 7.5, 0, Math.PI * 2));
+  hourglass(-9, -82, 5.5, omni());
+  // diamond head with a tall crest and yellow eyes
   crystal([[-8, -94], [-16, -112], [-14, -140], [-2, -122], [8, -128], [20, -114], [18, -98], [6, -92]], gem);
   ctx.strokeStyle = gemLight; ctx.lineWidth = 1.2;
   ctx.beginPath(); ctx.moveTo(-12, -134); ctx.lineTo(-6, -112); ctx.lineTo(8, -126); ctx.moveTo(-6, -112); ctx.lineTo(-2, -96); ctx.stroke();
-  ctx.fillStyle = '#0e5c3a';
-  ctx.beginPath(); ctx.moveTo(4, -110); ctx.lineTo(10, -112); ctx.lineTo(9, -108); ctx.fill();
-  ctx.beginPath(); ctx.moveTo(13, -112); ctx.lineTo(18, -111); ctx.lineTo(17, -108); ctx.fill();
-  ctx.strokeStyle = '#0e5c3a'; ctx.lineWidth = 1.5;
+  ctx.fillStyle = '#ffd23a';
+  ctx.beginPath(); ctx.moveTo(4, -110); ctx.lineTo(10, -112); ctx.lineTo(9, -107.5); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(13, -112); ctx.lineTo(18, -111); ctx.lineTo(17, -107.5); ctx.fill();
+  ctx.strokeStyle = '#1d6a64'; ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.moveTo(8, -101); ctx.lineTo(16, -102); ctx.stroke();
   // front arm ending in a crystal blade
   seg(13, -84, 24, -66, 9, gem);
@@ -493,8 +503,7 @@ function drawDiamondhead(s, t) {
 
 function drawWildmutt(s, t) {
   const fur = '#f08a24', furDark = '#c2621a';
-  // tail and quills along the back
-  seg(-30, -44, -42, -52, 6, fur);
+  // quills along the back (no tail)
   for (let i = 0; i < 5; i++) shape(furDark, () => { ctx.moveTo(-24 + i * 10, -50); ctx.lineTo(-20 + i * 10, -64); ctx.lineTo(-16 + i * 10, -50); });
   // four legs, running on all fours
   [[-22, -s, furDark], [16, s, furDark], [-16, s, fur], [22, -s, fur]].forEach(([lx, sw, c]) => {
@@ -504,8 +513,11 @@ function drawWildmutt(s, t) {
   shape(fur, () => ctx.ellipse(0, -40, 32, 15, 0, 0, Math.PI * 2));
   ctx.strokeStyle = furDark; ctx.lineWidth = 2;
   ctx.beginPath(); for (let i = 0; i < 3; i++) { ctx.moveTo(-14 + i * 10, -54); ctx.lineTo(-18 + i * 10, -44); } ctx.stroke();
-  hourglass(14, -38, 6, omni());
-  // head with no eyes, gills and a big toothy mouth
+  // black and white brace on his shoulder holding the watch symbol
+  shape('#f2f2f2', () => ctx.ellipse(16, -42, 9, 11, 0, 0, Math.PI * 2));
+  shape('#1c1c1c', () => ctx.ellipse(16, -42, 6.5, 8.5, 0, 0, Math.PI * 2));
+  hourglass(16, -42, 5.5, omni());
+  // head with no eyes, three gills on the neck and a big toothy mouth
   shape(fur, () => ctx.ellipse(36, -48, 15, 11, 0.2, 0, Math.PI * 2));
   shape('#3a0d0d', () => { ctx.moveTo(36, -46); ctx.lineTo(52, -50); ctx.lineTo(50, -38); });
   ctx.fillStyle = '#fff';
@@ -520,13 +532,15 @@ function drawGreyMatter(s, t) {
   seg(6, -40, 8 + s, -8, 7, grey);
   shape(greyDark, () => ctx.ellipse(-6 - s, -4, 7, 4, 0, 0, Math.PI * 2));
   shape(grey, () => ctx.ellipse(10 + s, -4, 7, 4, 0, 0, Math.PI * 2));
-  // small body in a black and white suit
-  shape('#1c1c1c', () => ctx.ellipse(0, -50, 13, 16, 0, 0, Math.PI * 2));
-  ctx.fillStyle = '#f2f2f2'; ctx.fillRect(-2, -64, 5, 28);
-  hourglass(0, -46, 6, omni());
+  // the watch symbol is on his back
+  hourglass(-12, -54, 6, omni());
+  // small body in a white jumpsuit with a thin black stripe
+  shape('#f2f2f2', () => ctx.ellipse(0, -50, 13, 16, 0, 0, Math.PI * 2));
+  ctx.fillStyle = '#1b1b1b'; ctx.fillRect(1, -65, 2.5, 30);
   seg(10, -58, 20, -46, 5, grey);
-  // big head with huge eyes and a wide frog mouth
+  // big head with huge yellow-green eyes, a black stripe on the forehead and a wide frog mouth
   shape(grey, () => ctx.ellipse(3, -84, 22, 19, 0, 0, Math.PI * 2));
+  ctx.fillStyle = '#1b1b1b'; ctx.fillRect(6, -103, 3, 9);
   [[0, -88], [16, -88]].forEach(([ex, ey]) => {
     shape('#c8f05a', () => ctx.ellipse(ex, ey, 7, 8, 0, 0, Math.PI * 2));
     ctx.fillStyle = '#0d0d0d'; ctx.beginPath(); ctx.ellipse(ex + 2, ey, 2.5, 4, 0, 0, Math.PI * 2); ctx.fill();
@@ -537,62 +551,74 @@ function drawGreyMatter(s, t) {
 
 function drawStinkfly(s, t) {
   ctx.translate(0, -24 + Math.sin(t / 2) * 3); // hovering
-  const green = '#9ccf3a', dark = '#4f7a1a';
-  // buzzing wings
+  const green = '#9ccf3a', limbs = '#6b6a2a';
+  // see-through dragonfly wings, buzzing
   const flap = Math.sin(t * 4) * 0.35;
   const base = ctx.globalAlpha;
-  ctx.globalAlpha = base * 0.55;
-  [[-6, -0.9], [-2, -0.5]].forEach(([wx, base]) => {
-    ctx.save(); ctx.translate(wx, -70); ctx.rotate(base + flap);
-    shape('#e8ffd0', () => ctx.ellipse(-26, 0, 28, 8, 0, 0, Math.PI * 2));
+  ctx.globalAlpha = base * 0.5;
+  [[-6, -0.9], [-2, -0.5]].forEach(([wx, a0]) => {
+    ctx.save(); ctx.translate(wx, -70); ctx.rotate(a0 + flap);
+    shape('#e8ffb0', () => ctx.ellipse(-26, 0, 28, 8, 0, 0, Math.PI * 2));
+    ctx.strokeStyle = '#9ab040'; ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.moveTo(-50, 0); ctx.lineTo(-2, 0); ctx.moveTo(-40, -5); ctx.lineTo(-14, 4); ctx.stroke();
     ctx.restore();
   });
   ctx.globalAlpha = base;
-  // striped tail with a stinger
-  shape(green, () => ctx.ellipse(-24, -58, 20, 10, 0.3, 0, Math.PI * 2));
-  ctx.strokeStyle = dark; ctx.lineWidth = 2.5;
-  ctx.beginPath(); for (let i = 0; i < 3; i++) { ctx.moveTo(-34 + i * 8, -66 + i * 2); ctx.lineTo(-30 + i * 8, -50 + i * 2); } ctx.stroke();
-  shape('#2b2b2b', () => { ctx.moveTo(-42, -52); ctx.lineTo(-54, -44); ctx.lineTo(-40, -46); });
+  // black tail with a stinger
+  shape('#1e1e1e', () => ctx.ellipse(-24, -58, 20, 9, 0.3, 0, Math.PI * 2));
+  shape('#1e1e1e', () => { ctx.moveTo(-40, -52); ctx.lineTo(-56, -44); ctx.lineTo(-38, -46); });
   // dangling legs
-  for (let i = 0; i < 3; i++) seg(-4 + i * 7, -58, -6 + i * 7 + Math.sin(t + i) * 2, -36, 3, dark);
-  // body and head
-  shape(green, () => ctx.ellipse(2, -68, 13, 12, 0, 0, Math.PI * 2));
-  hourglass(4, -66, 6, omni());
+  for (let i = 0; i < 3; i++) seg(-4 + i * 7, -58, -6 + i * 7 + Math.sin(t + i) * 2, -36, 3, limbs);
+  // white sleeveless outfit with black trim
+  shape('#f2f2f2', () => ctx.ellipse(2, -68, 13, 12, 0, 0, Math.PI * 2));
+  ctx.strokeStyle = '#1b1b1b'; ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.ellipse(2, -68, 12, 11, 0, Math.PI * 0.15, Math.PI * 0.85); ctx.stroke();
+  // head, with the watch symbol on the forehead
   shape(green, () => ctx.ellipse(18, -82, 11, 9, 0, 0, Math.PI * 2));
-  // four eyes on stalks
-  [[16, -100], [24, -102], [30, -96], [10, -97]].forEach(([ex, ey], i) => {
-    seg(18 + i, -88, ex, ey, 2.5, dark);
-    shape('#ffe14d', () => ctx.arc(ex, ey, 3.5, 0, Math.PI * 2));
+  hourglass(16, -86, 4.5, omni());
+  // four eyes on long stalks
+  [[16, -102], [24, -104], [30, -97], [9, -98]].forEach(([ex, ey], i) => {
+    seg(18 + i, -88, ex, ey, 2.5, limbs);
+    shape('#ffb52e', () => ctx.arc(ex, ey, 3.5, 0, Math.PI * 2));
     ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(ex + 1, ey, 1.4, 0, Math.PI * 2); ctx.fill();
   });
-  ctx.strokeStyle = dark; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.moveTo(22, -78); ctx.lineTo(28, -78); ctx.stroke();
+  ctx.strokeStyle = limbs; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(22, -77); ctx.lineTo(28, -78); ctx.stroke();
 }
 
 function drawRipjaws(s, t) {
-  const skin = '#6f8f98', dark = '#4b6870', belly = '#d8e2dc';
-  seg(-11, -82, -14 - s / 3, -54, 8, dark);
-  seg(-5, -46, -6 - s, -8, 12, dark);
-  seg(5, -46, 6 + s, -8, 12, skin);
-  shape(dark, () => ctx.ellipse(-4 - s, -3, 9, 4, 0, 0, Math.PI * 2));
-  shape(skin, () => ctx.ellipse(8 + s, -3, 9, 4, 0, 0, Math.PI * 2));
-  // black and white suit
-  shape('#1c1c1c', () => { ctx.moveTo(-16, -88); ctx.lineTo(16, -88); ctx.lineTo(15, -46); ctx.lineTo(-15, -46); });
-  shape('#f2f2f2', () => ctx.rect(-15, -52, 30, 6));
-  hourglass(0, -49, 5, omni());
+  const skin = '#c3cbcf', dark = '#8f9aa0', web = '#3f6b4a', belly = '#e8ecea';
+  const hop = Math.abs(Math.sin(hero.walk)) * -4; // he flops along on his tail out of water
+  ctx.translate(0, hop);
+  seg(-11, -82, -14 - s / 3, -56, 8, dark);
+  // black and green striped fish tail instead of legs
+  shape('#1e2b22', () => {
+    ctx.moveTo(-14, -46); ctx.lineTo(14, -46);
+    ctx.quadraticCurveTo(14, -18, 4, -8); ctx.lineTo(-6, -8);
+    ctx.quadraticCurveTo(-16, -22, -14, -46);
+  });
+  ctx.strokeStyle = web; ctx.lineWidth = 4;
+  [-38, -28, -18].forEach(sy => { ctx.beginPath(); ctx.moveTo(-13 + (sy + 46) / 6, sy); ctx.lineTo(13 - (sy + 46) / 4, sy); ctx.stroke(); });
+  shape(web, () => { ctx.moveTo(-1, -10); ctx.lineTo(-16, 0); ctx.lineTo(18, 0); ctx.lineTo(3, -10); });
+  // pale grey body with a black patch over the watch symbol
+  shape(skin, () => { ctx.moveTo(-16, -88); ctx.lineTo(16, -88); ctx.lineTo(15, -46); ctx.lineTo(-15, -46); });
+  shape(belly, () => ctx.ellipse(6, -66, 7, 16, 0, 0, Math.PI * 2));
+  shape('#1c1c1c', () => ctx.ellipse(-5, -74, 8.5, 9, 0, 0, Math.PI * 2));
+  hourglass(-5, -74, 6, omni());
   // fin on the back
-  shape(dark, () => { ctx.moveTo(-14, -90); ctx.lineTo(-26, -108); ctx.lineTo(-8, -98); });
+  shape(web, () => { ctx.moveTo(-14, -90); ctx.lineTo(-26, -108); ctx.lineTo(-8, -98); });
   // big head with a huge underbite full of teeth
   shape(skin, () => ctx.ellipse(4, -110, 18, 15, 0, 0, Math.PI * 2));
   shape(belly, () => { ctx.moveTo(-8, -102); ctx.quadraticCurveTo(14, -86, 30, -104); ctx.lineTo(26, -106); ctx.quadraticCurveTo(12, -96, -4, -104); });
   ctx.fillStyle = '#fff';
   for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.moveTo(i * 5, -103 + i * 0.3); ctx.lineTo(2.5 + i * 5, -109); ctx.lineTo(5 + i * 5, -102.5 + i * 0.3); ctx.fill(); }
-  ctx.fillStyle = '#fffbe0'; ctx.beginPath(); ctx.ellipse(12, -116, 3, 2.5, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(13, -116, 1.2, 0, Math.PI * 2); ctx.fill();
-  // glowing lure on his head
-  ctx.strokeStyle = dark; ctx.lineWidth = 2;
+  // purplish-grey eye on a swamp-green base
+  shape('#5d7a3a', () => ctx.ellipse(12, -116, 4, 3.4, 0, 0, Math.PI * 2));
+  ctx.fillStyle = '#a58aa8'; ctx.beginPath(); ctx.arc(13, -116, 2, 0, Math.PI * 2); ctx.fill();
+  // the angler-fish lure on his head, same colour as his webbing
+  ctx.strokeStyle = web; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(4, -124); ctx.quadraticCurveTo(10, -138, 22, -132); ctx.stroke();
-  shape('#ffe14d', () => ctx.arc(23, -130, 3.5, 0, Math.PI * 2));
+  shape(web, () => ctx.arc(23, -130, 3.5, 0, Math.PI * 2));
   seg(13, -82, 24, -62, 8, skin);
   hand(27, -60, 0.4, skin);
 }
@@ -604,13 +630,13 @@ function drawUpgrade(s, t) {
   seg(-5, -46, -6 - s, -6, 11, black);
   seg(5, -46, 6 + s, -6, 11, black);
   lines([[6 + s / 2, -40], [6 + s, -10]]);
-  // smooth body with glowing circuit lines
+  // liquid-metal body: black with green circuit lines and a white front
   shape(black, () => ctx.ellipse(0, -66, 16, 24, 0, 0, Math.PI * 2));
+  shape('#eeeeee', () => ctx.ellipse(6, -68, 8, 18, 0, 0, Math.PI * 2));
   lines([[-10, -84], [-10, -70], [-4, -64], [-4, -48]]);
-  lines([[10, -84], [10, -72], [4, -66]]);
-  lines([[-14, -60], [-8, -56], [12, -56]]);
-  hourglass(2, -72, 6, omni());
-  // round head with one big eye
+  lines([[-14, -60], [-8, -56], [0, -56]]);
+  hourglass(6, -74, 6, omni());
+  // round head with one big green eye
   shape(black, () => ctx.ellipse(4, -104, 15, 16, 0, 0, Math.PI * 2));
   shape(glow, () => ctx.arc(8, -106, 8, 0, Math.PI * 2));
   ctx.fillStyle = black; ctx.beginPath(); ctx.arc(8, -106, 5, 0, Math.PI * 2); ctx.fill();
@@ -639,13 +665,13 @@ function drawGhostfreak(s, t) {
   ctx.moveTo(12, -84); ctx.quadraticCurveTo(4, -72, 10, -58);
   ctx.moveTo(-6, -44); ctx.quadraticCurveTo(0, -30, -4, -18);
   ctx.stroke();
-  hourglass(0, -76, 6, omni());
+  hourglass(-5, -66, 6, omni());
   // head with one big eye
   shape(pale, () => ctx.ellipse(4, -106, 15, 17, 0, 0, Math.PI * 2));
   ctx.strokeStyle = stripe; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(-8, -118); ctx.quadraticCurveTo(0, -110, -6, -98); ctx.stroke();
   shape('#ffffff', () => ctx.ellipse(10, -108, 7, 6, 0, 0, Math.PI * 2));
-  ctx.fillStyle = '#7a1c8a'; ctx.beginPath(); ctx.arc(11, -108, 4, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#c2448a'; ctx.beginPath(); ctx.arc(11, -108, 4, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(11.5, -108, 1.8, 0, Math.PI * 2); ctx.fill();
   ctx.strokeStyle = stripe; ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.moveTo(6, -97); ctx.lineTo(16, -98); ctx.stroke();
@@ -680,13 +706,18 @@ function usePower() {
 function fireballs(x, y, f) { shots.push({ kind: 'fire', x, y, vx: f * 10, vy: 1, r: 9, life: 90 }); }
 function crystals(x, y, f) { for (let i = -1; i <= 1; i++) shots.push({ kind: 'crystal', x, y, vx: f * 11, vy: 1 + i * 1.5, r: 6, life: 70 }); }
 function slime(x, y, f) { shots.push({ kind: 'slime', x, y: y - 30, vx: f * 8, vy: -2, r: 8, life: 120, fall: 0.25 }); }
-function laser(x, y, f) { shots.push({ kind: 'laser', x, y, vx: f * 20, vy: 1.5, r: 4, life: 45, pierce: true }); }
+function laser(x, y, f, k) { shots.push({ kind: 'laser', x: hero.x + f * 16 * k, y: hero.y - 106 * k, vx: f * 20, vy: 2.5, r: 4, life: 45, pierce: true }); }
 function seedBombs(x, y, f) { shots.push({ kind: 'seed', x, y, vx: f * 6, vy: -8, r: 6, life: 200, fall: 0.4, boom: true }); }
+function smokeBomb(x, y, f) { shots.push({ kind: 'seed', x, y, vx: f * 6, vy: -8, r: 6, life: 200, fall: 0.4, smoke: true }); }
 function pounce(x, y, f, k, now) { hero.vy = -14; hero.dash = now + 600; hero.dashV = f * 11; }
 function speedDash(x, y, f, k, now) { hero.dash = now + 450; hero.dashV = f * 26; }
 function roll(x, y, f, k, now) { hero.rolling = now + 3000; }
 function vanish(x, y, f, k, now) { hero.ghost = now + 5000; }
-function groundSmash(x, y, f, k, now) { hero.vy = 0; shake = 15; blast(hero.x, GROUND, 170, 'quake'); }
+function groundSmash(x, y, f, k, now) {
+  hero.vy = 0; shake = 15;
+  blast(hero.x, GROUND, 170, 'quake');
+  [-1, 1].forEach(d => effects.push({ kind: 'spikes', x: hero.x + d * 110, y: GROUND, color: '#8b5e34', born: Date.now(), life: 700 }));
+}
 function chomp(x, y, f, k) { blast(x + f * 20, y, 70, 'chomp', f); }
 // Grey Matter works out the weak spot of the nearest rock, and it crumbles.
 function superBrain(x, y, f, k, now) {
@@ -736,7 +767,11 @@ function updatePowers(now) {
     const r = hitsRock(p.x, p.y, p.r);
     if (r) { smashRock(r); if (!p.pierce) dead = true; }
     if (p.y >= GROUND) { p.y = GROUND; dead = true; }
-    if (dead) { if (p.boom) blast(p.x, p.y, 70, 'boom'); shots.splice(i, 1); }
+    if (dead) {
+      if (p.boom) blast(p.x, p.y, 70, 'boom');
+      if (p.smoke) blast(p.x, p.y, 90, 'gas', 0, '#9a9a9a');
+      shots.splice(i, 1);
+    }
   }
   for (let i = bits.length - 1; i >= 0; i--) {
     const b = bits[i]; b.x += b.vx; b.y += b.vy; b.vy += 0.5;
@@ -772,7 +807,7 @@ function drawPowers(now) {
     } else if (p.kind === 'goo') {
       shape('#c6e84a', () => ctx.ellipse(p.x, p.y, p.r, p.r * 0.8, now / 150, 0, Math.PI * 2));
     } else if (p.kind === 'seed') {
-      shape('#6b8e23', () => ctx.ellipse(p.x, p.y, 6, 8, now / 100, 0, Math.PI * 2));
+      shape(p.smoke ? '#555555' : '#1e1e1e', () => ctx.ellipse(p.x, p.y, 6, 8, now / 100, 0, Math.PI * 2));
     }
   });
   bits.forEach(b => { ctx.fillStyle = b.metal ? '#9aa3ab' : b.box ? '#b5833f' : '#8b5e34'; ctx.fillRect(b.x - 4, b.y - 4, 8, 8); });
@@ -794,12 +829,12 @@ function drawPowers(now) {
       for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(e.x - e.f * 10, e.y - 10 + i * 12, 30, -0.9, 0.9, false); ctx.stroke(); }
     } else if (e.kind === 'spikes') {
       const up = Math.min(1, t * 4);
-      for (let i = -2; i <= 2; i++) shape('#3fd18a', () => { ctx.moveTo(e.x + i * 22 - 10, e.y); ctx.lineTo(e.x + i * 22, e.y - (70 - Math.abs(i) * 15) * up); ctx.lineTo(e.x + i * 22 + 10, e.y); });
+      for (let i = -2; i <= 2; i++) shape(e.color || '#4fd1c5', () => { ctx.moveTo(e.x + i * 22 - 10, e.y); ctx.lineTo(e.x + i * 22, e.y - (70 - Math.abs(i) * 15) * up); ctx.lineTo(e.x + i * 22 + 10, e.y); });
     } else if (e.kind === 'tornado') {
       ctx.strokeStyle = '#9fd0ff'; ctx.lineWidth = 3;
       for (let i = 0; i < 6; i++) { ctx.beginPath(); ctx.ellipse(hero.x, e.y - 20 - i * 30, 25 + i * 14, 8 + i * 2, 0, now / 80 + i, now / 80 + i + 4); ctx.stroke(); }
     } else if (e.kind === 'gas') {
-      ctx.fillStyle = '#b4d84a';
+      ctx.fillStyle = e.color || '#b4d84a';
       for (let i = 0; i < 7; i++) { ctx.beginPath(); ctx.arc(e.x + Math.cos(i * 0.9) * e.r * t, e.y + Math.sin(i * 1.7) * 30, 18 + 20 * t, 0, Math.PI * 2); ctx.fill(); }
     } else if (e.kind === 'tentacles') {
       ctx.strokeStyle = '#2a2433'; ctx.lineWidth = 5;
@@ -823,9 +858,9 @@ function drawPowers(now) {
     } else if (e.kind === 'say') {
       ctx.fillStyle = '#ffffff'; ctx.font = 'bold 22px system-ui'; ctx.textAlign = 'center';
       ctx.fillText(e.text, Math.max(200, Math.min(W - 200, hero.x)), hero.y - 250);
-    } else if (e.kind === 'boo' || e.kind === 'hungry') {
-      ctx.fillStyle = e.kind === 'boo' ? '#e8e0ff' : '#ffffff'; ctx.font = 'bold 34px system-ui'; ctx.textAlign = 'center';
-      ctx.fillText(e.kind === 'boo' ? 'BOO!' : 'Hungry! Eat first', hero.x, hero.y - 290 - t * 20);
+    } else if (e.kind === 'hungry') {
+      ctx.fillStyle = '#ffffff'; ctx.font = 'bold 34px system-ui'; ctx.textAlign = 'center';
+      ctx.fillText('Hungry! Eat first', hero.x, hero.y - 290 - t * 20);
     } else if (e.kind === 'idea') {
       const bx = hero.x + hero.face * 10, by = hero.y - 110;
       shape('#ffffff', () => ctx.ellipse(bx, by, 34, 20, 0, 0, Math.PI * 2));
@@ -846,20 +881,19 @@ function fireJump(x, y, f, k, now) {
 function clawSlash(x, y, f) { blast(x + f * 15, y, 55, 'slash', f); }
 function roar(x, y, f) { shots.push({ kind: 'wave', x, y: y - 20, vx: f * 9, vy: 0, r: 30, life: 45, pierce: true }); }
 function crystalSpikes(x, y, f) { blast(hero.x + f * 110, GROUND, 60, 'spikes', f); }
-function crystalBlade(x, y, f) { blast(x + f * 20, y, 60, 'slash', f, '#3fd18a'); }
+function crystalBlade(x, y, f) { blast(x + f * 20, y, 60, 'slash', f, '#4fd1c5'); }
 function tornado(x, y, f, k, now) { effects.push({ kind: 'tornado', x: hero.x, y: GROUND, born: now, life: 1500 }); blast(hero.x, GROUND, 130, 'none'); }
 function tailWhip(x, y, f) { blast(hero.x - f * 70, hero.y - 40, 50, 'slash', -f, '#1f4fc4'); }
 function frogLeap(x, y, f, k, now) { hero.vy = -15; hero.dash = now + 700; hero.dashV = f * 6; }
 function thunderClap(x, y, f) { shake = 8; shots.push({ kind: 'wave', x, y: y + 20, vx: f * 12, vy: 0, r: 45, life: 50, pierce: true }); }
 function jumpSlam(x, y, f, k, now) { hero.vy = -17; hero.slam = now + 150; }
 function stinkCloud(x, y, f, k, now) { blast(x + f * 50, y + 20, 80, 'gas'); }
-function stinger(x, y, f) { shots.push({ kind: 'crystal', color: '#2b2b2b', x: hero.x - f * 40, y: hero.y - 70, vx: f * 13, vy: 1.5, r: 5, life: 60 }); }
+function stinger(x, y, f) { shots.push({ kind: 'crystal', color: '#1e1e1e', x: hero.x - f * 40, y: hero.y - 70, vx: f * 13, vy: 1.5, r: 5, life: 60 }); }
 function sharkDive(x, y, f, k, now) { hero.vy = -11; hero.dash = now + 650; hero.dashV = f * 9; hero.chompOnLand = now + 150; }
 function lureFlash(x, y, f, k, now) { effects.push({ kind: 'lure', born: now, life: 600 }); }
 function megaBlast(x, y, f) { shake = 5; shots.push({ kind: 'plasma', x, y, vx: f * 9, vy: 0.8, r: 14, life: 90, boom: true }); }
 function stretchPunch(x, y, f, k, now) { effects.push({ kind: 'stretch', x, y, f, born: now, life: 350, color: '#141414' }); blast(x + f * 110, y, 35, 'none'); }
 function tentacles(x, y, f) { blast(hero.x, hero.y - 50, 110, 'tentacles'); }
-function scare(x, y, f, k, now) { effects.push({ kind: 'boo', born: now, life: 1000 }); shake = 6; }
 function megaBounce(x, y, f, k, now) { hero.vy = -18; hero.rolling = now + 1500; }
 function vineWhip(x, y, f, k, now) { effects.push({ kind: 'stretch', x, y, f, born: now, life: 350, color: '#4f9a2e' }); blast(x + f * 120, y, 35, 'none'); }
 function vineSwing(x, y, f, k, now) { hero.vy = -16; hero.dash = now + 800; hero.dashV = f * 7; effects.push({ kind: 'vine', x: hero.x + f * 120, born: now, life: 800 }); }
@@ -880,30 +914,30 @@ function spitGoo(x, y, f) {
 }
 
 function drawUpchuck(s, t) {
-  const green = '#7ab648', dark = '#4f7f2a', belly = '#f0e6c0';
-  seg(-6, -30, -7 - s, -6, 8, dark);
+  const green = '#7ab648', dark = '#3f6e22', belly = '#a8d77a';
+  seg(-6, -30, -7 - s, -6, 8, green);
   seg(6, -30, 7 + s, -6, 8, green);
+  ctx.fillStyle = '#f2f2f2'; ctx.fillRect(-11 - s, -20, 9, 4); ctx.fillRect(3 + s, -20, 9, 4); // white leg bands
   shape(dark, () => ctx.ellipse(-5 - s, -3, 7, 3.5, 0, 0, Math.PI * 2));
   shape(green, () => ctx.ellipse(9 + s, -3, 7, 3.5, 0, 0, Math.PI * 2));
-  // round body: the belly gets bigger with every thing he eats
+  // round belly that gets bigger with every thing he eats, in a black open-front suit
   const fat = 20 + (hero.ammo || 0) * 3;
-  shape(green, () => ctx.ellipse(0, -48, fat, 24, 0, 0, Math.PI * 2));
-  shape(belly, () => ctx.ellipse(6, -44, fat * 0.6, 16, 0, 0, Math.PI * 2));
-  shape('#1c1c1c', () => ctx.rect(-fat + 4, -36, fat * 2 - 8, 6));
-  hourglass(0, -33, 5, omni());
-  // big head that's mostly mouth, with small eyes on top
+  shape('#1c1c1c', () => ctx.ellipse(0, -48, fat, 24, 0, 0, Math.PI * 2));
+  shape(belly, () => ctx.ellipse(5, -46, fat * 0.65, 20, 0, 0, Math.PI * 2));
+  // big head that's mostly mouth, a dark green patch on top, plain white eyes
   shape(green, () => ctx.ellipse(6, -84, 19, 15, 0, 0, Math.PI * 2));
+  shape(dark, () => ctx.ellipse(2, -96, 11, 5, 0, 0, Math.PI * 2));
   shape('#5a1a1a', () => ctx.ellipse(12, -80, 12, 6, 0, 0, Math.PI));
   ctx.strokeStyle = '#d65a7a'; ctx.lineWidth = 3;
   for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(8 + i * 3, -80); ctx.quadraticCurveTo(10 + i * 3, -76 + Math.sin(t + i) * 2, 6 + i * 4, -74); ctx.stroke(); }
-  [[2, -98], [12, -99]].forEach(([ex, ey]) => {
-    shape('#fff', () => ctx.arc(ex, ey, 4, 0, Math.PI * 2));
-    ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(ex + 1.2, ey, 1.8, 0, Math.PI * 2); ctx.fill();
-  });
-  seg(16, -56, 26, -46, 6, green);
+  [[6, -92], [16, -92]].forEach(([ex, ey]) => shape('#fff', () => ctx.ellipse(ex, ey, 3.5, 4, 0, 0, Math.PI * 2)));
+  // arm in a white over-sleeve, with the watch symbol on his hand
+  seg(14, -60, 24, -48, 7, '#f2f2f2');
+  shape(green, () => ctx.arc(27, -46, 5, 0, Math.PI * 2));
+  hourglass(27, -46, 4.5, omni());
 }
 
-// ---- Upgrade's merge: he goes inside a box, barrel or rock and takes control of it ----
+// ---- Upgrade's merge (and Ghostfreak's possess): go inside a box, barrel or rock and control it ----
 const MERGE = {
   box:    { name: 'laser box',     speed: 5, jump: 12 },
   barrel: { name: 'barrel cannon', speed: 7, jump: 10 },
@@ -949,18 +983,19 @@ function mergedShot(now) {
 function drawMerged(now) {
   const r = hero.merged, x = hero.x - r.w / 2, y = hero.y - r.h;
   drawThing(r, x, y);
-  // Upgrade's black and green covering the whole thing
-  ctx.fillStyle = 'rgba(10,10,10,0.55)'; ctx.fillRect(x, y, r.w, r.h);
-  ctx.strokeStyle = '#39ff6a'; ctx.lineWidth = 2;
+  const ghost = hero.alien.name === 'Ghostfreak';
+  // Upgrade's black and green (or Ghostfreak's ghostly white) covering the whole thing
+  ctx.fillStyle = ghost ? 'rgba(230,234,240,0.5)' : 'rgba(10,10,10,0.55)'; ctx.fillRect(x, y, r.w, r.h);
+  ctx.strokeStyle = ghost ? '#2a2433' : '#39ff6a'; ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(x + 4, y + r.h - 4); ctx.lineTo(x + 4, y + r.h / 2); ctx.lineTo(x + r.w / 2, y + r.h / 2 - 6);
   ctx.moveTo(x + r.w - 4, y + 6); ctx.lineTo(x + r.w - 4, y + r.h - 10); ctx.lineTo(x + r.w / 2, y + r.h - 10);
   ctx.stroke();
   // his one big eye, looking the way he's going
   const ex = hero.x + hero.face * r.w * 0.18, ey = y + Math.min(16, r.h * 0.3);
-  ctx.fillStyle = '#39ff6a'; ctx.beginPath(); ctx.arc(ex, ey, 8, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#141414'; ctx.beginPath(); ctx.arc(ex, ey, 5, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#39ff6a'; ctx.beginPath(); ctx.arc(ex + hero.face * 1.5, ey, 2.2, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = ghost ? '#ffffff' : '#39ff6a'; ctx.beginPath(); ctx.arc(ex, ey, 8, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = ghost ? '#c2448a' : '#141414'; ctx.beginPath(); ctx.arc(ex, ey, 5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = ghost ? '#111' : '#39ff6a'; ctx.beginPath(); ctx.arc(ex + hero.face * 1.5, ey, 2.2, 0, Math.PI * 2); ctx.fill();
   hourglass(hero.x, y + r.h * 0.65, 6, omni());
 }
 
@@ -980,60 +1015,74 @@ function drawThing(r, x, y) {
 }
 
 function drawCannonbolt(s, t) {
-  const shell = '#f1ead2', plate = '#e6b400', skin = '#3a3a3a';
-  if (Date.now() < hero.rolling) { // curled up into a ball
+  const skin = '#efe6cc', plate = '#e6b400', plateDark = '#b88a00';
+  if (Date.now() < hero.rolling) { // curled up into an armoured ball
     ctx.save(); ctx.translate(0, -30); ctx.rotate(hero.x / 30);
-    shape(shell, () => ctx.arc(0, 0, 30, 0, Math.PI * 2));
-    ctx.strokeStyle = plate; ctx.lineWidth = 6;
+    shape(plate, () => ctx.arc(0, 0, 30, 0, Math.PI * 2));
+    ctx.strokeStyle = skin; ctx.lineWidth = 5;
     for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(0, 0, 30 - i * 9, i, i + 2.2); ctx.stroke(); }
+    ctx.strokeStyle = plateDark; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(-30, 0); ctx.lineTo(30, 0); ctx.moveTo(0, -30); ctx.lineTo(0, 30); ctx.stroke();
     ctx.restore();
     return;
   }
   seg(-10, -40, -11 - s, -6, 10, skin);
   seg(10, -40, 11 + s, -6, 10, skin);
   seg(-24, -70, -30, -44, 8, skin);
-  // big round shell body with yellow plates
-  shape(shell, () => ctx.ellipse(0, -62, 30, 34, 0, 0, Math.PI * 2));
-  ctx.strokeStyle = plate; ctx.lineWidth = 5;
-  ctx.beginPath(); ctx.arc(-6, -62, 30, Math.PI * 0.6, Math.PI * 1.4); ctx.stroke();
-  ctx.beginPath(); ctx.arc(-6, -62, 20, Math.PI * 0.65, Math.PI * 1.35); ctx.stroke();
-  shape(skin, () => ctx.ellipse(12, -62, 12, 20, 0, 0, Math.PI * 2));
-  hourglass(12, -60, 6, omni());
-  // small head peeking out the top
+  // big round body: yellow armour plates on his back, cream belly with a black stripe
+  shape(plate, () => ctx.ellipse(0, -62, 30, 34, 0, 0, Math.PI * 2));
+  ctx.strokeStyle = plateDark; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(-6, -62, 22, Math.PI * 0.6, Math.PI * 1.4); ctx.stroke();
+  ctx.beginPath(); ctx.arc(-6, -62, 12, Math.PI * 0.65, Math.PI * 1.35); ctx.stroke();
+  shape(skin, () => ctx.ellipse(12, -62, 13, 22, 0, 0, Math.PI * 2));
+  ctx.fillStyle = '#1b1b1b'; ctx.fillRect(13, -82, 4, 40);
+  // small head peeking out the top, with yellow eyes and the watch symbol on his forehead
   shape(skin, () => ctx.ellipse(14, -98, 10, 9, 0, 0, Math.PI * 2));
-  shape(shell, () => { ctx.moveTo(2, -100); ctx.quadraticCurveTo(12, -112, 24, -102); ctx.lineTo(20, -104); ctx.quadraticCurveTo(12, -108, 4, -98); });
-  ctx.fillStyle = '#39ff6a';
-  ctx.beginPath(); ctx.ellipse(18, -99, 2.5, 2, 0, 0, Math.PI * 2); ctx.fill();
+  shape(plate, () => { ctx.moveTo(2, -100); ctx.quadraticCurveTo(12, -114, 24, -102); ctx.lineTo(20, -104); ctx.quadraticCurveTo(12, -108, 4, -98); });
+  hourglass(14, -104, 4, omni());
+  ctx.fillStyle = '#ffd400';
+  ctx.beginPath(); ctx.ellipse(19, -97, 2.5, 2, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = LINE; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(15, -92); ctx.lineTo(22, -93); ctx.stroke();
+  // front arm with an armour plate on the back of it
   seg(24, -72, 32, -52, 8, skin);
+  shape(plate, () => ctx.ellipse(26, -64, 4, 8, -0.4, 0, Math.PI * 2));
 }
 
 function drawWildvine(s, t) {
-  const green = '#4f9a2e', dark = '#2f6a1a', leaf = '#7ccf4a';
-  // seed pods on the back
-  [[-14, -84], [-18, -72], [-16, -60]].forEach(([px, py]) => shape('#8a6a2a', () => ctx.ellipse(px, py, 5, 6, 0, 0, Math.PI * 2)));
+  const green = '#4f9a2e', dark = '#2f6a1a', blueEye = '#3aa0ff';
+  // black fruit pods on the back
+  [[-14, -84], [-18, -72], [-16, -60]].forEach(([px, py]) => shape('#1e1e1e', () => ctx.ellipse(px, py, 5, 6, 0, 0, Math.PI * 2)));
   seg(-8, -80, -18 - s / 3, -50, 6, dark);
-  // vine legs with root feet
-  seg(-4, -46, -5 - s, -6, 8, dark);
-  seg(4, -46, 5 + s, -6, 8, green);
-  shape(dark, () => { ctx.moveTo(-14 - s, 0); ctx.lineTo(-5 - s, -8); ctx.lineTo(2 - s, 0); });
-  shape(green, () => { ctx.moveTo(-2 + s, 0); ctx.lineTo(6 + s, -8); ctx.lineTo(14 + s, 0); });
+  // five vine legs
+  [-10, -5, 0, 5, 10].forEach((lx, i) => seg(lx / 2, -46, lx + (i % 2 ? s : -s) * 0.8, -3, 4.5, i % 2 ? dark : green));
   // twisty vine body
   shape(green, () => { ctx.moveTo(-10, -88); ctx.quadraticCurveTo(4, -70, -6, -46); ctx.lineTo(8, -46); ctx.quadraticCurveTo(16, -70, 10, -88); });
   ctx.strokeStyle = dark; ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.moveTo(-4, -84); ctx.quadraticCurveTo(8, -70, 0, -50); ctx.stroke();
   hourglass(4, -72, 6, omni());
-  // flower head with one big eye
-  for (let i = 0; i < 6; i++) {
-    const ang = i * Math.PI / 3 + Math.sin(t / 3) * 0.1;
-    shape(leaf, () => ctx.ellipse(4 + Math.cos(ang) * 14, -106 + Math.sin(ang) * 14, 7, 4, ang, 0, Math.PI * 2));
-  }
-  shape(green, () => ctx.ellipse(4, -106, 12, 12, 0, 0, Math.PI * 2));
-  shape('#e9ff7a', () => ctx.ellipse(8, -107, 5, 6, 0, 0, Math.PI * 2));
-  ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(9, -107, 2.3, 0, Math.PI * 2); ctx.fill();
-  // long stretchy front arm with a leafy hand
+  // small blue eyes on his shoulders
+  [[-8, -88], [12, -88]].forEach(([ex, ey]) => {
+    shape('#fff', () => ctx.arc(ex, ey, 2.6, 0, Math.PI * 2));
+    ctx.fillStyle = blueEye; ctx.beginPath(); ctx.arc(ex + 0.5, ey, 1.6, 0, Math.PI * 2); ctx.fill();
+  });
+  // head covered by flytrap flaps with teeth, and one big blue eye in the middle
+  shape(green, () => ctx.ellipse(4, -104, 12, 13, 0, 0, Math.PI * 2));
+  const flapMove = Math.sin(t / 3) * 0.08;
+  [[-1, -0.5], [1, 0.5]].forEach(([side, tilt]) => {
+    ctx.save(); ctx.translate(4 + side * 9, -110); ctx.rotate(tilt + flapMove * side);
+    shape(dark, () => ctx.ellipse(0, -6, 7, 14, 0, 0, Math.PI * 2));
+    ctx.fillStyle = '#f2f2f2';
+    for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(-side * 6, -16 + i * 6); ctx.lineTo(-side * 10, -14 + i * 6); ctx.lineTo(-side * 6, -12 + i * 6); ctx.fill(); }
+    ctx.restore();
+  });
+  shape('#fff', () => ctx.ellipse(6, -103, 5.5, 6, 0, 0, Math.PI * 2));
+  ctx.fillStyle = blueEye; ctx.beginPath(); ctx.arc(7, -103, 3.5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(7.5, -103, 1.6, 0, Math.PI * 2); ctx.fill();
+  // long stretchy front arm with four long fingers
   seg(10, -82, 22, -70, 6, green);
   seg(22, -70, 36, -64, 5, green);
-  shape(leaf, () => ctx.ellipse(40, -63, 7, 4, -0.3, 0, Math.PI * 2));
+  for (let i = 0; i < 4; i++) seg(36, -64, 44 + i, -68 + i * 3, 1.8, green);
 }
 
 function draw() {
