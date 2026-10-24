@@ -85,7 +85,7 @@ function update() {
   let moving = false;
   if (keys.left)  { hero.x -= speed; hero.face = -1; moving = true; }
   if (keys.right) { hero.x += speed; hero.face = 1;  moving = true; }
-  hero.x = Math.max(30, Math.min(W - 30, hero.x));
+  hero.x = Math.max(50, Math.min(W - 50, hero.x));
   if (keys.up && hero.y >= GROUND) hero.vy = -jump;
   hero.vy += 0.6;
   hero.y = Math.min(GROUND, hero.y + hero.vy);
@@ -116,54 +116,122 @@ function hourglass(cx, cy, r, glow) {
   ctx.restore();
 }
 
+const SCALE = 1.9; // how big the characters are on screen
+const SKIN = '#f3c9a0', LINE = '#2a1a10';
+
+// A thick rounded limb with a dark outline.
+function seg(x1, y1, x2, y2, w, color) {
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = LINE; ctx.lineWidth = w + 3;
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  ctx.strokeStyle = color; ctx.lineWidth = w;
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+}
+
+function shape(fill, build) {
+  ctx.beginPath(); build(); ctx.closePath();
+  ctx.fillStyle = fill; ctx.fill();
+  ctx.strokeStyle = LINE; ctx.lineWidth = 1.5; ctx.stroke();
+}
+
+// A cartoon hand: palm, four finger bumps and a thumb.
+function hand(x, y, angle, skin) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(angle);
+  shape(skin, () => ctx.ellipse(0, 0, 5.5, 5, 0, 0, Math.PI * 2));
+  for (let i = 0; i < 4; i++) shape(skin, () => ctx.ellipse(5, -3.6 + i * 2.4, 2.6, 1.5, 0, 0, Math.PI * 2));
+  shape(skin, () => ctx.ellipse(1, -5.5, 1.8, 3, -0.5, 0, Math.PI * 2));
+  ctx.restore();
+}
+
+function sneaker(x, y) {
+  shape('#1c1c1c', () => { ctx.moveTo(x - 7, y - 1); ctx.quadraticCurveTo(x - 6, y - 9, x + 2, y - 8); ctx.quadraticCurveTo(x + 11, y - 6, x + 11, y - 1); });
+  shape('#f2f2f2', () => ctx.rect(x - 8, y - 2, 20, 3));
+  ctx.strokeStyle = '#f2f2f2'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(x - 2, y - 7); ctx.lineTo(x + 3, y - 4); ctx.stroke();
+}
+
 function drawBenjji(x, y) {
-  const legSwing = Math.sin(hero.walk) * 8;
+  const s = Math.sin(hero.walk) * 9;
+  const air = hero.y < GROUND;
   ctx.save();
   ctx.translate(x, y);
-  ctx.scale(hero.face, 1);
-  // legs (green pants)
-  ctx.strokeStyle = '#3d5a2a'; ctx.lineWidth = 9; ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(-5, -40); ctx.lineTo(-5 + legSwing, -4); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(5, -40);  ctx.lineTo(5 - legSwing, -4);  ctx.stroke();
-  // shoes
-  ctx.fillStyle = '#222';
-  ctx.fillRect(-10 + legSwing, -6, 14, 6);
-  ctx.fillRect(-2 - legSwing, -6, 14, 6);
-  // body (white shirt with a black stripe)
-  ctx.fillStyle = '#f4f4f4';
-  ctx.fillRect(-14, -78, 28, 40);
-  ctx.fillStyle = '#111';
-  ctx.fillRect(-3, -78, 6, 40);
-  // back arm
-  ctx.strokeStyle = '#f1c9a5'; ctx.lineWidth = 7;
-  ctx.beginPath(); ctx.moveTo(-10, -72); ctx.lineTo(-14 - legSwing / 2, -46); ctx.stroke();
-  // head
-  ctx.fillStyle = '#f1c9a5';
-  ctx.beginPath(); ctx.arc(0, -94, 16, 0, Math.PI * 2); ctx.fill();
-  // brown hair
-  ctx.fillStyle = '#6b3d1e';
-  ctx.beginPath(); ctx.arc(0, -98, 16, Math.PI, 0); ctx.fill();
-  ctx.fillRect(-16, -100, 8, 10);
-  // eye and smile
-  ctx.fillStyle = '#2a7d3a';
-  ctx.beginPath(); ctx.arc(7, -95, 2.5, 0, Math.PI * 2); ctx.fill();
-  ctx.strokeStyle = '#7a3b2a'; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.arc(6, -88, 4, 0.2, Math.PI - 0.6); ctx.stroke();
-  // front arm, raised a little to show off the watch
-  ctx.strokeStyle = '#f1c9a5'; ctx.lineWidth = 7;
-  ctx.beginPath(); ctx.moveTo(10, -72); ctx.lineTo(22, -52); ctx.stroke();
-  // the watch: green band + hourglass face
-  ctx.fillStyle = '#2b2b2b';
-  ctx.fillRect(15, -60, 12, 9);
-  hourglass(21, -56, 7, '#39ff6a');
+  ctx.scale(hero.face * SCALE, SCALE);
+
+  // back arm (a little darker because it's behind him)
+  seg(-11, -80, -13 - s / 3, -64, 8, '#dcdcd8');
+  seg(-13 - s / 3, -64, -12 - s / 2, -52, 6.5, '#e2b48c');
+  hand(-12 - s / 2, -49, Math.PI / 2, '#e2b48c');
+
+  // legs: olive cargo pants
+  const backFoot = air ? -6 : -6 - s, frontFoot = air ? 8 : 6 + s;
+  seg(-5, -46, backFoot, -9, 12, '#46542c');
+  sneaker(backFoot, 0);
+  seg(5, -46, frontFoot, -9, 12, '#56673a');
+  shape('#4a5a2e', () => ctx.rect(frontFoot / 2 + 3, -36, 7, 7)); // cargo pocket
+  sneaker(frontFoot, 0);
+
+  // body: white T-shirt with the black stripe down the middle
+  shape('#f7f7f4', () => {
+    ctx.moveTo(-15, -86); ctx.quadraticCurveTo(0, -91, 15, -86);
+    ctx.lineTo(16, -46); ctx.lineTo(-16, -46);
+  });
+  ctx.fillStyle = '#1b1b1b'; ctx.fillRect(-3, -88, 7, 42);
+  ctx.fillStyle = '#e4e4df'; ctx.fillRect(-15, -84, 4, 38); // shade
+  // collar
+  ctx.strokeStyle = LINE; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(1, -89, 5, 0.1 * Math.PI, 0.9 * Math.PI); ctx.stroke();
+  // belt line
+  ctx.fillStyle = '#3a4524'; ctx.fillRect(-16, -48, 32, 4);
+
+  // neck
+  seg(1, -90, 1, -95, 8, SKIN);
+
+  // head: a bit rounder and bigger, so he looks younger
+  shape(SKIN, () => ctx.ellipse(3, -113, 18, 20, 0, 0, Math.PI * 2));
+  shape(SKIN, () => ctx.ellipse(-10, -111, 4, 6, 0, 0, Math.PI * 2)); // ear
+  // eyes: big and green
+  [[6, 4, 5], [16, 3.4, 4.4]].forEach(([ex, rx, ry]) => {
+    shape('#fff', () => ctx.ellipse(ex, -114, rx, ry, 0, 0, Math.PI * 2));
+    ctx.fillStyle = '#35a84a'; ctx.beginPath(); ctx.arc(ex + 1, -113.5, rx * 0.75, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#0d0d0d'; ctx.beginPath(); ctx.arc(ex + 1.2, -113.5, rx * 0.35, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(ex + 2, -115, 0.9, 0, Math.PI * 2); ctx.fill();
+  });
+  // eyebrows
+  ctx.strokeStyle = '#4a2a14'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(2, -121); ctx.lineTo(9, -122); ctx.moveTo(13, -121.5); ctx.lineTo(19, -121); ctx.stroke();
+  // nose and a confident smile
+  ctx.strokeStyle = '#b07a55'; ctx.lineWidth = 1.3;
+  ctx.beginPath(); ctx.moveTo(20, -110); ctx.quadraticCurveTo(22, -107, 19, -106); ctx.stroke();
+  ctx.strokeStyle = LINE; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(9, -101); ctx.quadraticCurveTo(14, -98, 18, -102); ctx.stroke();
+
+  // spiky brown hair swept to the front
+  shape('#5c3317', () => {
+    ctx.moveTo(-15, -103); ctx.lineTo(-18, -117); ctx.lineTo(-13, -129); ctx.lineTo(-1, -136);
+    ctx.lineTo(13, -134); ctx.lineTo(24, -127); ctx.lineTo(23, -119); ctx.lineTo(19, -123);
+    ctx.lineTo(16, -117); ctx.lineTo(12, -123); ctx.lineTo(7, -118); ctx.lineTo(3, -124);
+    ctx.lineTo(-3, -120); ctx.lineTo(-5, -110); ctx.lineTo(-9, -103);
+  });
+  ctx.strokeStyle = '#8a5530'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(-8, -129); ctx.quadraticCurveTo(4, -134, 16, -130); ctx.stroke();
+
+  // front arm, bent forward to show off the watch
+  seg(11, -80, 15, -64, 8, '#f7f7f4');
+  seg(15, -64, 29, -58, 6.5, SKIN);
+  hand(33, -57, -0.3, SKIN);
+  // the watch: chunky band with the hourglass face
+  shape('#2b2b2b', () => ctx.rect(23, -63, 7, 10));
+  shape('#7a7a7a', () => ctx.rect(22, -62, 9, 2));
+  hourglass(26.5, -58, 5.5, '#39ff6a');
+
   ctx.restore();
 }
 
 function drawAlien(x, y, a) {
   const s = a.size, t = Date.now() / 120;
   ctx.save();
-  ctx.translate(x, y);
-  ctx.scale(hero.face * s, s);
+  ctx.translate(x, y + 20 * s * SCALE); // feet on the ground
+  ctx.scale(hero.face * s * SCALE, s * SCALE);
   ctx.fillStyle = a.color;
   if (a.name === 'Blaze') {
     // flickering flames on top
