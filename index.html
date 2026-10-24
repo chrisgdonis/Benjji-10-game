@@ -146,16 +146,21 @@ function omni() {
 }
 
 const ACTIONS = { watch: useWatch, dial, power: usePower, swap: swapPower, all: allAliens };
-const KEYMAP = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'back', ArrowDown: 'front', ' ': 'jump', j: 'jump', J: 'jump', w: 'watch', W: 'watch', y: 'dial', Y: 'dial', p: 'power', P: 'power', o: 'swap', O: 'swap', a: 'all', A: 'all' };
+// Keyboard: arrows move, Space jumps, Shift is the watch, Ctrl turns the dial,
+// Insert (the 0/Ins key) uses a power, 1 swaps powers and Enter calls ALL the aliens.
+// The old letter keys still work too.
+const KEYMAP = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'back', ArrowDown: 'front', ' ': 'jump', j: 'jump', J: 'jump',
+  Shift: 'watch', Control: 'dial', Insert: 'power', Numpad0: 'power', '0': 'power', '1': 'swap', Enter: 'all',
+  w: 'watch', W: 'watch', y: 'dial', Y: 'dial', p: 'power', P: 'power', o: 'swap', O: 'swap', a: 'all', A: 'all' };
 addEventListener('keydown', e => {
-  const k = KEYMAP[e.key];
+  const k = KEYMAP[e.key] || KEYMAP[e.code];
   if (!k) return;
   e.preventDefault();
   if (ACTIONS[k]) { if (!e.repeat) ACTIONS[k](); } else keys[k] = true;
   if (k === 'jump') hero.wantJump = true; // so even a quick tap jumps
 });
 addEventListener('keyup', e => {
-  const k = KEYMAP[e.key];
+  const k = KEYMAP[e.key] || KEYMAP[e.code];
   if (k) keys[k] = false;
 });
 document.querySelectorAll('[data-key]').forEach(b => {
@@ -200,10 +205,10 @@ function update() {
   if (a && now >= hero.until) changeBack(true);
   if (flash) flash--;
 
-  if (hero.merged) hud.textContent = `${a.name} is ${a.name === 'Ghostfreak' ? 'possessing' : 'controlling'} the ${MERGE[kindOf(hero.merged)].name}! · P: shoot · O: jump out · ${clock(hero.until - now)} left`;
-  else if (hero.alien) hud.textContent = `${a.name} · P: ${a.powers[hero.pw][0]} (${hero.pw + 1}/${a.powers.length}) · O swaps${a.name === 'Upchuck' ? ` · goo: ${hero.ammo}` : ''} · ${clock(hero.until - now)} left`;
+  if (hero.merged) hud.textContent = `${a.name} is ${a.name === 'Ghostfreak' ? 'possessing' : 'controlling'} the ${MERGE[kindOf(hero.merged)].name}! · Ins: shoot · 1: jump out · ${clock(hero.until - now)} left`;
+  else if (hero.alien) hud.textContent = `${a.name} · Ins: ${a.powers[hero.pw][0]} (${hero.pw + 1}/${a.powers.length}) · 1 swaps${a.name === 'Upchuck' ? ` · goo: ${hero.ammo}` : ''} · ${clock(hero.until - now)} left`;
   else if (now < hero.recharge) hud.textContent = `Watch recharging… ${Math.ceil((hero.recharge - now) / 1000)}s`;
-  else hud.textContent = `Benjji · alien ${hero.dial + 1}/${ALIENS.length}: ${ALIENS[hero.dial].name} · Y pick · W go hero · Space jump · A: ALL`;
+  else hud.textContent = `Benjji · alien ${hero.dial + 1}/${ALIENS.length}: ${ALIENS[hero.dial].name} · Ctrl pick · Shift go hero · Space jump · Enter: ALL`;
 }
 
 // The hourglass symbol: two green triangles meeting in the middle.
