@@ -15,6 +15,7 @@
     background: #102a1799; color: #eaffea; font-size: 17px; font-weight: 700; }
   #left { left: 10px; }
   #right { right: 10px; }
+  #allBtn { background: linear-gradient(135deg, #ff6a1a, #39ff6a, #2a6cf0); color: #000; font-size: 11px; border-color: #ffffff; }
   #powerBtn { background: #ff8a1fcc; color: #000; font-size: 9px; border-color: #ffd23a; }
   #watchBtn { width: 54px; height: 54px; background: #39ff6acc; color: #000; font-size: 10px; }
 </style>
@@ -25,6 +26,7 @@
 <div class="pad" id="left">
   <button data-key="left">◀</button>
   <button data-key="right">▶</button>
+  <button id="allBtn" data-key="all">ALL</button>
 </div>
 <div class="pad" id="right">
   <button data-key="up">▲</button>
@@ -119,8 +121,8 @@ function omni() {
   return '#39ff6a';
 }
 
-const ACTIONS = { watch: useWatch, dial, power: usePower, swap: swapPower };
-const KEYMAP = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ' ': 'up', w: 'watch', W: 'watch', y: 'dial', Y: 'dial', p: 'power', P: 'power', o: 'swap', O: 'swap' };
+const ACTIONS = { watch: useWatch, dial, power: usePower, swap: swapPower, all: allAliens };
+const KEYMAP = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ' ': 'up', w: 'watch', W: 'watch', y: 'dial', Y: 'dial', p: 'power', P: 'power', o: 'swap', O: 'swap', a: 'all', A: 'all' };
 addEventListener('keydown', e => {
   const k = KEYMAP[e.key];
   if (!k) return;
@@ -169,7 +171,7 @@ function update() {
   if (hero.merged) hud.textContent = `${a.name} is ${a.name === 'Ghostfreak' ? 'possessing' : 'controlling'} the ${MERGE[kindOf(hero.merged)].name}! · P: shoot · O: jump out · ${clock(hero.until - now)} left`;
   else if (hero.alien) hud.textContent = `${a.name} · P: ${a.powers[hero.pw][0]} (${hero.pw + 1}/${a.powers.length}) · O swaps${a.name === 'Upchuck' ? ` · goo: ${hero.ammo}` : ''} · ${clock(hero.until - now)} left`;
   else if (now < hero.recharge) hud.textContent = `Watch recharging… ${Math.ceil((hero.recharge - now) / 1000)}s`;
-  else hud.textContent = `Benjji · alien ${hero.dial + 1} of ${ALIENS.length}: ${ALIENS[hero.dial].name} · Y to pick, W to go hero, W again to change back`;
+  else hud.textContent = `Benjji · alien ${hero.dial + 1}/${ALIENS.length}: ${ALIENS[hero.dial].name} · Y pick · W go hero · A: ALL ALIENS`;
 }
 
 // The hourglass symbol: two green triangles meeting in the middle.
@@ -1152,6 +1154,7 @@ function heroBox() {
 
 function hurtHero(dmg, fromX) {
   const now = Date.now();
+  if (now < army.until) return; // the whole alien army has your back
   if (now < hero.hurtUntil || now < game.over) return;
   if (hero.alien && (now < hero.ghost || now < hero.rolling)) return; // invisible or rolled up in armour
   hero.hp -= dmg;
@@ -1379,6 +1382,67 @@ function drawStatus(now) {
   }
 }
 
+// ---- ALL ALIENS: every alien jumps out and uses every one of its powers ----
+const army = { until: 0, born: 0, spots: [] };
+const ARMY_MS = 3500;
+// powers that just shoot or hit, so they work from wherever each alien stands
+const ARMY_SAFE = [fireballs, flamethrower, crystals, crystalSpikes, crystalBlade, slime, stinkCloud, stinger,
+  laser, megaBlast, stretchPunch, seedBombs, smokeBomb, vineWhip, roar, clawSlash, thunderClap, groundSmash,
+  chomp, tentacles, tailWhip];
+
+function allAliens() {
+  const now = Date.now();
+  if (now < army.until) return;
+  army.born = now; army.until = now + ARMY_MS;
+  army.spots = ALIENS.map((a, i) => ({ a, x: cam + 50 + i * (W - 100) / (ALIENS.length - 1), face: 1 }));
+  banner('ALL ALIENS ATTACK!');
+  flash = 15;
+  let delay = 400;
+  army.spots.forEach(spot => spot.a.powers.forEach(([, fn]) => {
+    setTimeout(() => armyPower(spot, fn), delay);
+    delay += 45;
+  }));
+  // a big finish that beats every bad guy on the screen
+  setTimeout(() => {
+    enemies.slice().forEach(e => { if (e.x > cam - 50 && e.x < cam + W + 50) { e.hurt = 0; damageEnemy(e, 99); } });
+    shake = 20; flash = 20;
+  }, ARMY_MS - 500);
+}
+
+function armyPower(spot, fn) {
+  const now = Date.now();
+  const target = enemies.slice().sort((p, q) => Math.abs(p.x - spot.x) - Math.abs(q.x - spot.x))[0];
+  const f = target ? Math.sign(target.x - spot.x) || 1 : (spot.x < hero.x ? -1 : 1);
+  spot.face = f;
+  const k = 0.6 * spot.a.size * SCALE;
+  // use the alien's spot for a moment, without moving the real hero
+  const saved = { x: hero.x, y: hero.y, face: hero.face, vy: hero.vy, dash: hero.dash, dashV: hero.dashV,
+    rolling: hero.rolling, ghost: hero.ghost, slam: hero.slam, chompOnLand: hero.chompOnLand };
+  hero.x = spot.x; hero.y = GROUND; hero.face = f;
+  const before = shots.length;
+  if (ARMY_SAFE.includes(fn)) fn(spot.x + f * 30 * k, GROUND - 45 * k, f, k, now);
+  else if (fn === spitGoo) shots.push({ kind: 'goo', x: spot.x + f * 20, y: GROUND - 50, vx: f * 9, vy: -3, r: 10, life: 120, fall: 0.25, boom: true });
+  else if (target) blast(target.x, target.type === 'drone' ? target.y : target.y - 100, 50, 'slash', f, '#39ff6a'); // dashes, rolls, merges...
+  aimShots(shots.slice(before));
+  Object.assign(hero, saved);
+}
+
+function drawArmy(now) {
+  if (now >= army.until) return;
+  const t = now / 120;
+  army.spots.forEach((spot, i) => {
+    const appear = Math.min(1, (now - army.born - i * 40) / 300);
+    if (appear <= 0) return;
+    ctx.save();
+    ctx.globalAlpha = Math.min(appear, (army.until - now) / 400);
+    ctx.translate(spot.x, GROUND + (1 - appear) * 40);
+    const k = 0.6 * spot.a.size * SCALE;
+    ctx.scale(spot.face * k, k);
+    spot.a.draw(Math.sin(t / 2 + i) * 3, t);
+    ctx.restore();
+  });
+}
+
 // ---- Bellwood: the city where it all happens. It's much wider than the screen,
 // and the camera follows the hero as they walk through it. ----
 const rand = i => { const x = Math.sin(i * 127.1) * 43758.5453; return x - Math.floor(x); };
@@ -1462,6 +1526,7 @@ function draw() {
   rocks.forEach(r => { if (!r.back && r.x + r.w > cam - 20 && r.x < cam + W + 20) drawThing(r, r.x, GROUND - r.h); });
   drawPickups(now);
   drawEnemies(now);
+  drawArmy(now);
   ctx.save();
   if (now < hero.hurtUntil && Math.floor(now / 100) % 2) ctx.globalAlpha = 0.4; // blink when hit
   if (hero.alien) {
