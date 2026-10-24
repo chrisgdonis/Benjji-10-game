@@ -14,6 +14,9 @@
   .pad button { width: 42px; height: 42px; padding: 0; border-radius: 50%; border: 2px solid #39ff6a;
     background: #102a1799; color: #eaffea; font-size: 17px; font-weight: 700; }
   #left { left: 10px; }
+  .dpad { display: grid; grid-template-columns: repeat(3, 36px); grid-template-rows: repeat(3, 30px); gap: 2px; }
+  .pad .dpad button { width: 36px; height: 30px; border-radius: 9px; font-size: 13px; }
+  .dpad .up { grid-area: 1 / 2; } .dpad .lt { grid-area: 2 / 1; } .dpad .rt { grid-area: 2 / 3; } .dpad .dn { grid-area: 3 / 2; }
   #right { right: 10px; }
   #allBtn { background: linear-gradient(135deg, #ff6a1a, #39ff6a, #2a6cf0); color: #000; font-size: 11px; border-color: #ffffff; }
   #powerBtn { background: #ff8a1fcc; color: #000; font-size: 9px; border-color: #ffd23a; }
@@ -24,12 +27,16 @@
 <canvas id="game" width="800" height="450"></canvas>
 <div id="hud">Benjji · Y to pick an alien, W to go hero</div>
 <div class="pad" id="left">
-  <button data-key="left">◀</button>
-  <button data-key="right">▶</button>
+  <div class="dpad">
+    <button data-key="back" class="up">▲</button>
+    <button data-key="left" class="lt">◀</button>
+    <button data-key="right" class="rt">▶</button>
+    <button data-key="front" class="dn">▼</button>
+  </div>
   <button id="allBtn" data-key="all">ALL</button>
 </div>
 <div class="pad" id="right">
-  <button data-key="up">▲</button>
+  <button data-key="jump" style="font-size:9px">JUMP</button>
   <button data-key="dial">Y</button>
   <button data-key="swap" style="font-size:9px">SWAP</button>
   <button id="powerBtn" data-key="power">POWER</button>
@@ -42,6 +49,23 @@ const hud = document.getElementById('hud');
 const W = canvas.width, H = canvas.height, GROUND = H - 70;
 const WORLD = 4000; // how wide the whole city is
 let cam = 0;        // left edge of the screen, in the city
+// 2.5D: z is how far back on the street something is, from 0 (front) to DEPTH (back).
+// Things further back are drawn higher up and a little smaller.
+const DEPTH = 100;
+const floorShift = z => 40 - z * 1.1;
+const depthScale = z => 1 - z * 0.0028;
+const near = (z1, z2, range) => Math.abs(z1 - z2) < range;
+function atDepth(x, z, draw) {
+  const s = depthScale(z);
+  ctx.save();
+  ctx.translate(x, GROUND + floorShift(z)); ctx.scale(s, s); ctx.translate(-x, -GROUND);
+  draw();
+  ctx.restore();
+}
+function shadow(x, w) {
+  ctx.fillStyle = 'rgba(0,0,0,0.28)';
+  ctx.beginPath(); ctx.ellipse(x, GROUND, w, w * 0.22, 0, 0, Math.PI * 2); ctx.fill();
+}
 
 function fit() {
   const s = Math.min(innerWidth / W, innerHeight / H);
@@ -85,7 +109,7 @@ const ALIENS = [
 const HERO_MS = 10 * 60 * 1000;
 const RECHARGE_MS = 5 * 1000;
 
-const hero = { x: 120, y: GROUND, vy: 0, face: 1, alien: null, until: 0, recharge: 0, dial: 0, walk: 0,
+const hero = { x: 120, y: GROUND, z: 40, vy: 0, face: 1, alien: null, until: 0, recharge: 0, dial: 0, walk: 0,
   cool: 0, dash: 0, dashV: 0, rolling: 0, ghost: 0, hurtUntil: 0, pw: 0, ammo: 0, slam: 0, chompOnLand: 0, merged: null };
 const keys = {};
 
@@ -122,12 +146,13 @@ function omni() {
 }
 
 const ACTIONS = { watch: useWatch, dial, power: usePower, swap: swapPower, all: allAliens };
-const KEYMAP = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ' ': 'up', w: 'watch', W: 'watch', y: 'dial', Y: 'dial', p: 'power', P: 'power', o: 'swap', O: 'swap', a: 'all', A: 'all' };
+const KEYMAP = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'back', ArrowDown: 'front', ' ': 'jump', j: 'jump', J: 'jump', w: 'watch', W: 'watch', y: 'dial', Y: 'dial', p: 'power', P: 'power', o: 'swap', O: 'swap', a: 'all', A: 'all' };
 addEventListener('keydown', e => {
   const k = KEYMAP[e.key];
   if (!k) return;
   e.preventDefault();
   if (ACTIONS[k]) { if (!e.repeat) ACTIONS[k](); } else keys[k] = true;
+  if (k === 'jump') hero.wantJump = true; // so even a quick tap jumps
 });
 addEventListener('keyup', e => {
   const k = KEYMAP[e.key];
@@ -135,7 +160,11 @@ addEventListener('keyup', e => {
 });
 document.querySelectorAll('[data-key]').forEach(b => {
   const k = b.dataset.key;
-  b.addEventListener('pointerdown', e => { e.preventDefault(); if (ACTIONS[k]) ACTIONS[k](); else keys[k] = true; });
+  b.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    if (ACTIONS[k]) ACTIONS[k](); else keys[k] = true;
+    if (k === 'jump') hero.wantJump = true;
+  });
   ['pointerup', 'pointerleave', 'pointercancel'].forEach(t => b.addEventListener(t, () => keys[k] = false));
 });
 
@@ -153,9 +182,12 @@ function update() {
   let moving = false;
   if (keys.left)  { hero.x -= speed; hero.face = -1; moving = true; }
   if (keys.right) { hero.x += speed; hero.face = 1;  moving = true; }
+  if (keys.back)  { hero.z = Math.min(DEPTH, hero.z + speed * 0.6); moving = true; }
+  if (keys.front) { hero.z = Math.max(0, hero.z - speed * 0.6); moving = true; }
   hero.x = Math.max(50, Math.min(WORLD - 50, hero.x));
-  if (keys.up && a && a.fly && !m) hero.vy = Math.max(hero.vy - 1.2, -6); // flyers keep going up
-  else if (keys.up && hero.y >= GROUND) hero.vy = -jump;
+  if (keys.jump && a && a.fly && !m) hero.vy = Math.max(hero.vy - 1.2, -6); // flyers keep going up
+  else if ((keys.jump || hero.wantJump) && hero.y >= GROUND) hero.vy = -jump;
+  hero.wantJump = false;
   hero.vy += 0.6;
   hero.y = Math.max(170, Math.min(GROUND, hero.y + hero.vy));
   if (hero.y >= GROUND) hero.vy = 0;
@@ -171,7 +203,7 @@ function update() {
   if (hero.merged) hud.textContent = `${a.name} is ${a.name === 'Ghostfreak' ? 'possessing' : 'controlling'} the ${MERGE[kindOf(hero.merged)].name}! · P: shoot · O: jump out · ${clock(hero.until - now)} left`;
   else if (hero.alien) hud.textContent = `${a.name} · P: ${a.powers[hero.pw][0]} (${hero.pw + 1}/${a.powers.length}) · O swaps${a.name === 'Upchuck' ? ` · goo: ${hero.ammo}` : ''} · ${clock(hero.until - now)} left`;
   else if (now < hero.recharge) hud.textContent = `Watch recharging… ${Math.ceil((hero.recharge - now) / 1000)}s`;
-  else hud.textContent = `Benjji · alien ${hero.dial + 1}/${ALIENS.length}: ${ALIENS[hero.dial].name} · Y pick · W go hero · A: ALL ALIENS`;
+  else hud.textContent = `Benjji · alien ${hero.dial + 1}/${ALIENS.length}: ${ALIENS[hero.dial].name} · Y pick · W go hero · Space jump · A: ALL`;
 }
 
 // The hourglass symbol: two green triangles meeting in the middle.
@@ -690,9 +722,10 @@ function drawGhostfreak(s, t) {
 const shots = [], effects = [], bits = [];
 const rocks = [];
 for (let x = 480, i = 0; x < WORLD - 250; x += 230 + (i * 97) % 140, i++) {
-  if (i % 3 === 0) rocks.push({ x, h: 60 + (i * 13) % 30, w: 50, back: 0 });
-  else if (i % 3 === 1) rocks.push({ x, h: 50 + (i * 7) % 10, w: 36, back: 0, metal: true });
-  else rocks.push({ x, h: 40, w: 40, back: 0, box: true });
+  const z = (i * 41) % 90 + 5;
+  if (i % 3 === 0) rocks.push({ x, z, h: 60 + (i * 13) % 30, w: 50, back: 0 });
+  else if (i % 3 === 1) rocks.push({ x, z, h: 50 + (i * 7) % 10, w: 36, back: 0, metal: true });
+  else rocks.push({ x, z, h: 40, w: 40, back: 0, box: true });
 }
 let shake = 0;
 
@@ -707,10 +740,20 @@ function usePower() {
   const a = hero.alien, now = Date.now();
   if (!a || now < hero.cool) return;
   hero.cool = now + 400;
-  if (hero.merged) { const before = shots.length; mergedShot(now); return aimShots(shots.slice(before)); }
-  const k = a.size * SCALE, f = hero.face, before = shots.length;
-  a.powers[hero.pw][1](hero.x + f * 30 * k, hero.y - 45 * k, f, k, now);
+  const before = shots.length, beforeFx = effects.length;
+  if (hero.merged) mergedShot(now);
+  else {
+    const k = a.size * SCALE, f = hero.face;
+    a.powers[hero.pw][1](hero.x + f * 30 * k, hero.y - 45 * k, f, k, now);
+  }
+  stampDepth(before, beforeFx, hero.z);
   aimShots(shots.slice(before));
+}
+
+// New shots and effects happen at the depth of whoever made them.
+function stampDepth(before, beforeFx, z) {
+  shots.slice(before).forEach(p => { if (p.z === undefined) p.z = z; });
+  effects.slice(beforeFx).forEach(e => { if (e.z === undefined) e.z = z; });
 }
 
 // Straight shots aim at the nearest bad guy in front of the hero.
@@ -719,7 +762,7 @@ function aimShots(list) {
   if (!aimable.length) return;
   const p0 = aimable[0], dir = Math.sign(p0.vx);
   const target = enemies.filter(e => Math.sign(e.x - p0.x) === dir)
-    .sort((a, b) => Math.abs(a.x - p0.x) - Math.abs(b.x - p0.x))[0];
+    .sort((a, b) => Math.hypot(a.x - p0.x, (a.z - p0.z) * 3) - Math.hypot(b.x - p0.x, (b.z - p0.z) * 3))[0];
   if (!target) return;
   const ty = target.type === 'drone' ? target.y : target.y - 110;
   const dx = target.x - p0.x, dy = ty - p0.y, d = Math.hypot(dx, dy) || 1;
@@ -728,6 +771,7 @@ function aimShots(list) {
     const speed = Math.hypot(p.vx, p.vy);
     p.vy = dy / d * speed + (p.vy - baseVy);
     p.vx = dx / d * speed;
+    p.vz = (target.z - p.z) / (d / speed); // and across the street, to the bad guy's depth
   });
 }
 
@@ -750,24 +794,30 @@ function chomp(x, y, f, k) { blast(x + f * 20, y, 70, 'chomp', f); }
 // Grey Matter works out the weak spot of the nearest rock, and it crumbles.
 function superBrain(x, y, f, k, now) {
   effects.push({ kind: 'idea', born: now, life: 1500 });
-  const target = rocks.filter(r => !r.back).sort((p, q) => Math.abs(p.x + p.w / 2 - hero.x) - Math.abs(q.x + q.w / 2 - hero.x))[0];
+  const target = rocks.filter(r => !r.back).sort((p, q) => rockDist(p) - rockDist(q))[0];
   if (target) setTimeout(() => smashRock(target), 700);
+}
+
+// How far a rock, barrel or box is from the hero, counting depth too.
+function rockDist(r) {
+  return Math.hypot(r.x + r.w / 2 - hero.x, (r.z - hero.z) * 3);
 }
 
 function smashRock(r) {
   if (r.back) return;
   r.back = Date.now() + 4000;
-  for (let i = 0; i < 10; i++) bits.push({ x: r.x + r.w / 2, metal: r.metal, box: r.box, y: GROUND - r.h / 2, vx: (Math.random() - 0.5) * 10, vy: -Math.random() * 9, life: 60 });
+  for (let i = 0; i < 10; i++) bits.push({ x: r.x + r.w / 2, z: r.z, metal: r.metal, box: r.box, y: GROUND - r.h / 2, vx: (Math.random() - 0.5) * 10, vy: -Math.random() * 9, life: 60 });
 }
 
-function blast(x, y, radius, kind, f, color) {
-  effects.push({ kind, x, y, r: radius, f, color, born: Date.now(), life: kind === 'gas' ? 1200 : 400 });
-  rocks.forEach(r => { if (Math.abs(r.x + r.w / 2 - x) < radius + r.w / 2 && y > GROUND - r.h - radius) smashRock(r); });
-  if (kind !== 'gas' || color !== '#9a9a9a') blastEnemies(x, y, radius, kind === 'quake' ? 4 : 2);
+function blast(x, y, radius, kind, f, color, z = hero.z) {
+  effects.push({ kind, x, y, z, r: radius, f, color, born: Date.now(), life: kind === 'gas' ? 1200 : 400 });
+  const zr = radius * 0.4 + 20;
+  rocks.forEach(r => { if (Math.abs(r.x + r.w / 2 - x) < radius + r.w / 2 && y > GROUND - r.h - radius && near(r.z, z, zr)) smashRock(r); });
+  if (kind !== 'gas' || color !== '#9a9a9a') blastEnemies(x, y, radius, kind === 'quake' ? 4 : 2, z);
 }
 
-function hitsRock(x, y, pad) {
-  return rocks.find(r => !r.back && x > r.x - pad && x < r.x + r.w + pad && y > GROUND - r.h - pad);
+function hitsRock(x, y, pad, z) {
+  return rocks.find(r => !r.back && x > r.x - pad && x < r.x + r.w + pad && y > GROUND - r.h - pad && near(r.z, z, 22));
 }
 
 function updatePowers(now) {
@@ -786,23 +836,25 @@ function updatePowers(now) {
   }
   // smash rocks by running, pouncing or rolling into them
   if (a && (now < hero.dash || now < hero.rolling)) {
-    const r = hitsRock(hero.x, hero.y - 10, 20);
+    const r = hitsRock(hero.x, hero.y - 10, 20, hero.z);
     if (r) { smashRock(r); shake = 6; }
-    const foe = enemyAt(hero.x, hero.y - 40, 30);
+    const foe = enemyAt(hero.x, hero.y - 40, 30, hero.z);
     if (foe) damageEnemy(foe, 2);
   }
   for (let i = shots.length - 1; i >= 0; i--) {
     const p = shots[i];
+    if (p.z === undefined) p.z = hero.z;
     p.x += p.vx; p.y += p.vy; p.vy += p.fall || 0;
+    p.z = Math.max(0, Math.min(DEPTH, p.z + (p.vz || 0)));
     let dead = --p.life <= 0 || p.x < cam - 40 || p.x > cam + W + 40;
-    const r = hitsRock(p.x, p.y, p.r);
+    const r = hitsRock(p.x, p.y, p.r, p.z);
     if (r) { smashRock(r); if (!p.pierce) dead = true; }
-    const foe = !dead && enemyAt(p.x, p.y, p.r);
+    const foe = !dead && enemyAt(p.x, p.y, p.r, p.z);
     if (foe) { damageEnemy(foe, p.kind === 'plasma' || p.kind === 'goo' ? 3 : p.kind === 'laser' && p.color ? 2 : 1); if (!p.pierce) dead = true; }
     if (p.y >= GROUND) { p.y = GROUND; dead = true; }
     if (dead) {
-      if (p.boom) blast(p.x, p.y, 70, 'boom');
-      if (p.smoke) blast(p.x, p.y, 90, 'gas', 0, '#9a9a9a');
+      if (p.boom) blast(p.x, p.y, 70, 'boom', 0, undefined, p.z);
+      if (p.smoke) blast(p.x, p.y, 90, 'gas', 0, '#9a9a9a', p.z);
       shots.splice(i, 1);
     }
   }
@@ -810,13 +862,16 @@ function updatePowers(now) {
     const b = bits[i]; b.x += b.vx; b.y += b.vy; b.vy += 0.5;
     if (--b.life <= 0) bits.splice(i, 1);
   }
-  for (let i = effects.length - 1; i >= 0; i--) if (now - effects[i].born > effects[i].life) effects.splice(i, 1);
+  for (let i = effects.length - 1; i >= 0; i--) {
+    if (effects[i].z === undefined) effects[i].z = hero.z;
+    if (now - effects[i].born > effects[i].life) effects.splice(i, 1);
+  }
   rocks.forEach(r => { if (r.back && now > r.back) r.back = 0; });
   if (shake) shake--;
 }
 
 function drawPowers(now) {
-  shots.forEach(p => {
+  shots.forEach(p => atDepth(p.x, p.z ?? hero.z, () => {
     if (p.kind === 'fire') {
       ctx.fillStyle = '#ff6a1a'; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#ffe14d'; ctx.beginPath(); ctx.arc(p.x, p.y, p.r * 0.5, 0, Math.PI * 2); ctx.fill();
@@ -842,9 +897,9 @@ function drawPowers(now) {
     } else if (p.kind === 'seed') {
       shape(p.smoke ? '#555555' : '#1e1e1e', () => ctx.ellipse(p.x, p.y, 6, 8, now / 100, 0, Math.PI * 2));
     }
-  });
-  bits.forEach(b => { ctx.fillStyle = b.metal ? '#9aa3ab' : b.box ? '#b5833f' : '#8b5e34'; ctx.fillRect(b.x - 4, b.y - 4, 8, 8); });
-  effects.forEach(e => {
+  }));
+  bits.forEach(b => atDepth(b.x, b.z ?? hero.z, () => { ctx.fillStyle = b.metal ? '#9aa3ab' : b.box ? '#b5833f' : '#8b5e34'; ctx.fillRect(b.x - 4, b.y - 4, 8, 8); }));
+  effects.forEach(e => atDepth(e.x ?? hero.x, e.z ?? hero.z, () => {
     const t = (now - e.born) / e.life;
     ctx.save(); ctx.globalAlpha = 1 - t;
     if (e.kind === 'quake' || e.kind === 'boom') {
@@ -904,7 +959,7 @@ function drawPowers(now) {
       ctx.fillStyle = '#222'; ctx.font = 'bold 12px system-ui'; ctx.fillText('E=mc²', bx - 4, by + 4);
     }
     ctx.restore();
-  });
+  }));
 }
 
 function flamethrower(x, y, f) {
@@ -937,8 +992,8 @@ function vineSwing(x, y, f, k, now) { hero.vy = -16; hero.dash = now + 800; hero
 // Upchuck's long tongues grab the nearest rock or metal barrel and he eats it.
 // Everything he eats becomes explosive goo to spit (up to 5).
 function eat(x, y, f, k, now) {
-  const food = rocks.filter(r => !r.back && Math.abs(r.x + r.w / 2 - hero.x) < 260)
-    .sort((p, q) => Math.abs(p.x + p.w / 2 - hero.x) - Math.abs(q.x + q.w / 2 - hero.x))[0];
+  const food = rocks.filter(r => !r.back && Math.abs(r.x + r.w / 2 - hero.x) < 260 && near(r.z, hero.z, 40))
+    .sort((p, q) => rockDist(p) - rockDist(q))[0];
   if (!food || hero.ammo >= 5) { effects.push({ kind: 'tongue', x, y, tx: x + f * 80, ty: y, born: now, life: 300 }); return; }
   effects.push({ kind: 'tongue', x, y, tx: food.x + food.w / 2, ty: GROUND - food.h / 2, born: now, life: 300 });
   setTimeout(() => { if (!food.back) { food.back = Date.now() + 4000; hero.ammo++; } }, 250);
@@ -982,8 +1037,8 @@ const MERGE = {
 const kindOf = r => r.metal ? 'barrel' : r.box ? 'box' : 'rock';
 
 function merge(x, y, f, k, now) {
-  const target = rocks.filter(r => !r.back && Math.abs(r.x + r.w / 2 - hero.x) < 130)
-    .sort((p, q) => Math.abs(p.x + p.w / 2 - hero.x) - Math.abs(q.x + q.w / 2 - hero.x))[0];
+  const target = rocks.filter(r => !r.back && Math.abs(r.x + r.w / 2 - hero.x) < 130 && near(r.z, hero.z, 35))
+    .sort((p, q) => rockDist(p) - rockDist(q))[0];
   if (!target) { effects.push({ kind: 'say', text: 'Get closer to a box, barrel or rock!', born: now, life: 1500 }); return; }
   effects.push({ kind: 'stretch', x, y, f: Math.sign(target.x + target.w / 2 - hero.x) || f, born: now, life: 300, color: '#141414' });
   setTimeout(() => {
@@ -991,6 +1046,7 @@ function merge(x, y, f, k, now) {
     target.back = Infinity; // it's with Upgrade now
     hero.merged = target;
     hero.x = target.x + target.w / 2;
+    hero.z = target.z;
     flash = 10;
   }, 250);
 }
@@ -1000,6 +1056,7 @@ function unmerge() {
   const r = hero.merged;
   if (!r) return;
   r.x = Math.max(0, Math.min(WORLD - r.w, hero.x - r.w / 2));
+  r.z = hero.z;
   r.back = 0;
   hero.merged = null;
   hero.x = Math.min(WORLD - 50, hero.x + hero.face * (r.w / 2 + 25));
@@ -1135,13 +1192,13 @@ function banner(text) { effects.push({ kind: 'banner', text, born: Date.now(), l
 
 function spawnDrone() {
   const left = Math.random() < 0.5;
-  enemies.push({ type: 'drone', x: left ? cam - 30 : cam + W + 30, y: 170 + Math.random() * 110, hp: LEVEL.droneHp, maxHp: LEVEL.droneHp,
+  enemies.push({ type: 'drone', x: left ? cam - 30 : cam + W + 30, y: 170 + Math.random() * 110, z: Math.random() * DEPTH, hp: LEVEL.droneHp, maxHp: LEVEL.droneHp,
     cool: Date.now() + 2500 + Math.random() * 1500, hurt: 0, phase: Math.random() * 6 });
 }
 
 function spawnVilgax() {
   const side = hero.x + W / 2 + 60 < WORLD ? 1 : -1;
-  enemies.push({ type: 'vilgax', x: hero.x + side * (W / 2 + 60), y: GROUND, hp: LEVEL.vilgaxHp, maxHp: LEVEL.vilgaxHp, cool: Date.now() + 2500, hurt: 0, face: -side });
+  enemies.push({ type: 'vilgax', x: hero.x + side * (W / 2 + 60), y: GROUND, z: hero.z, hp: LEVEL.vilgaxHp, maxHp: LEVEL.vilgaxHp, cool: Date.now() + 2500, hurt: 0, face: -side });
   banner('VILGAX IS HERE!');
 }
 
@@ -1168,10 +1225,10 @@ function hurtHero(dmg, fromX) {
   }
 }
 
-function enemyAt(x, y, pad) {
-  return enemies.find(e => e.type === 'drone'
+function enemyAt(x, y, pad, z) {
+  return enemies.find(e => near(e.z, z, 22 + pad * 0.3) && (e.type === 'drone'
     ? Math.hypot(e.x - x, e.y - y) < 24 + pad
-    : Math.abs(e.x - x) < 40 + pad && y > e.y - 230 - pad && y < e.y + pad);
+    : Math.abs(e.x - x) < 40 + pad && y > e.y - 230 - pad && y < e.y + pad));
 }
 
 function damageEnemy(e, dmg) {
@@ -1181,27 +1238,27 @@ function damageEnemy(e, dmg) {
   e.hurt = now + 200;
   if (e.hp > 0) return;
   enemies.splice(enemies.indexOf(e), 1);
-  for (let i = 0; i < 12; i++) bits.push({ x: e.x, y: e.type === 'drone' ? e.y : e.y - 100, metal: true, vx: (Math.random() - 0.5) * 12, vy: -Math.random() * 10, life: 60 });
-  effects.push({ kind: 'boom', x: e.x, y: e.type === 'drone' ? e.y : e.y - 100, r: e.type === 'drone' ? 60 : 160, born: now, life: 500 });
+  for (let i = 0; i < 12; i++) bits.push({ x: e.x, z: e.z, y: e.type === 'drone' ? e.y : e.y - 100, metal: true, vx: (Math.random() - 0.5) * 12, vy: -Math.random() * 10, life: 60 });
+  effects.push({ kind: 'boom', x: e.x, z: e.z, y: e.type === 'drone' ? e.y : e.y - 100, r: e.type === 'drone' ? 60 : 160, born: now, life: 500 });
   if (e.type === 'vilgax') { game.score += 10; banner('YOU BEAT VILGAX!'); game.nextVilgax = game.score + 15; }
   else game.score++;
   // bad guys sometimes drop a heart (Vilgax always drops three)
   const drops = e.type === 'vilgax' ? 3 : Math.random() < LEVEL.heartChance ? 1 : 0;
-  for (let i = 0; i < drops; i++) pickups.push({ x: e.x + (i - 1) * 40, y: e.type === 'drone' ? e.y : e.y - 100, vy: -3 });
+  for (let i = 0; i < drops; i++) pickups.push({ x: e.x + (i - 1) * 40, z: e.z, y: e.type === 'drone' ? e.y : e.y - 100, vy: -3 });
 }
 
 // Every blast and contact attack hurts bad guys in range.
-function blastEnemies(x, y, radius, dmg) {
+function blastEnemies(x, y, radius, dmg, z) {
   enemies.slice().forEach(e => {
     const ey = e.type === 'drone' ? e.y : e.y - 100;
-    if (Math.abs(e.x - x) < radius + 30 && Math.abs(ey - y) < radius + (e.type === 'drone' ? 30 : 110)) damageEnemy(e, dmg);
+    if (Math.abs(e.x - x) < radius + 30 && near(e.z, z, radius * 0.4 + 25) && Math.abs(ey - y) < radius + (e.type === 'drone' ? 30 : 110)) damageEnemy(e, dmg);
   });
 }
 
 function resetGame() {
   enemies.length = 0; enemyShots.length = 0; pickups.length = 0;
   changeBack(false);
-  hero.hp = MAX_HP; hero.x = 120; hero.y = GROUND; hero.recharge = 0;
+  hero.hp = MAX_HP; hero.x = 120; hero.y = GROUND; hero.z = 40; hero.recharge = 0;
   game.score = 0; game.nextVilgax = 8; game.nextSpawn = Date.now() + 3000; game.over = 0;
 }
 
@@ -1218,7 +1275,7 @@ function updateEnemies(now) {
   for (let i = pickups.length - 1; i >= 0; i--) {
     const h = pickups[i];
     h.vy += 0.4; h.y = Math.min(GROUND - 14, h.y + h.vy);
-    if (Math.abs(h.x - hero.x) < 40 && hero.y > h.y - 20) {
+    if (Math.abs(h.x - hero.x) < 40 && near(h.z, hero.z, 25) && hero.y > h.y - 20) {
       hero.hp = Math.min(MAX_HP, hero.hp + 1);
       pickups.splice(i, 1);
     }
@@ -1231,24 +1288,28 @@ function updateEnemies(now) {
       if (want < cam + 40 || want > cam + W - 40) want = hero.x - Math.sign(want - hero.x) * 170; // stay on screen
       e.x += Math.max(-5, Math.min(5, (want - e.x) * 0.03));
       e.y += Math.sin(now / 400 + e.phase) * 0.6;
+      e.z += Math.max(-0.4, Math.min(0.4, (hero.z - e.z) * 0.01)); // drift slowly toward the hero's side of the street
       if (now > e.cool && e.x > cam && e.x < cam + W) {
         const dx = hero.x - e.x, dy = aimY - e.y, d = Math.hypot(dx, dy) || 1;
-        enemyShots.push({ x: e.x, y: e.y + 8, vx: dx / d * LEVEL.laserSpeed, vy: dy / d * LEVEL.laserSpeed, life: 200 });
+        enemyShots.push({ x: e.x, y: e.y + 8, z: e.z, vx: dx / d * LEVEL.laserSpeed, vy: dy / d * LEVEL.laserSpeed,
+          vz: (hero.z - e.z) / (d / LEVEL.laserSpeed), life: 200 });
         e.cool = now + LEVEL.droneShootMs + Math.random() * 1500;
       }
     } else {
       // Vilgax stomps toward the hero, punches up close and fires eye lasers from far away
       e.face = hero.x < e.x ? -1 : 1;
       if (Math.abs(hero.x - e.x) > 80) e.x += e.face * LEVEL.vilgaxSpeed;
+      e.z += Math.max(-0.8, Math.min(0.8, hero.z - e.z));
       if (now > e.cool) {
-        if (Math.abs(hero.x - e.x) < 110) {
-          effects.push({ kind: 'punch', x: e.x + e.face * 60, y: e.y - 120, f: e.face, born: now, life: 300 });
+        if (Math.abs(hero.x - e.x) < 110 && near(hero.z, e.z, 25)) {
+          effects.push({ kind: 'punch', x: e.x + e.face * 60, y: e.y - 120, z: e.z, f: e.face, born: now, life: 300 });
           if (Math.abs(hero.x - e.x) < 110 && hero.y > GROUND - 160) hurtHero(LEVEL.vilgaxPunch, e.x);
           e.cool = now + 2000;
         } else {
           const sx = e.x + e.face * 20, sy = e.y - 205;
           const dx = hero.x - sx, ddy = aimY - sy, d = Math.hypot(dx, ddy) || 1;
-          enemyShots.push({ x: sx, y: sy, vx: dx / d * LEVEL.laserSpeed, vy: ddy / d * LEVEL.laserSpeed, life: 200 });
+          enemyShots.push({ x: sx, y: sy, z: e.z, vx: dx / d * LEVEL.laserSpeed, vy: ddy / d * LEVEL.laserSpeed,
+            vz: (hero.z - e.z) / (d / LEVEL.laserSpeed), life: 200 });
           e.cool = now + 3500;
         }
       }
@@ -1256,12 +1317,12 @@ function updateEnemies(now) {
   });
   for (let i = enemyShots.length - 1; i >= 0; i--) {
     const p = enemyShots[i];
-    p.x += p.vx; p.y += p.vy;
+    p.x += p.vx; p.y += p.vy; p.z += p.vz;
     let dead = --p.life <= 0 || p.y > GROUND || p.x < cam - 40 || p.x > cam + W + 40;
-    if (!dead && Math.abs(p.x - hb.x) < hb.w && p.y > hb.top && p.y < hero.y) {
+    if (!dead && Math.abs(p.x - hb.x) < hb.w && p.y > hb.top && p.y < hero.y && near(p.z, hero.z, 18)) {
       if (hero.alien && hero.alien.name === 'Diamondhead' && !hero.merged) {
         // Diamondhead's crystal body bounces energy beams right back
-        shots.push({ kind: 'laser', color: '#ff3030', x: p.x, y: p.y, vx: -p.vx * 1.5, vy: -p.vy * 1.5, r: 4, life: 60 });
+        shots.push({ kind: 'laser', color: '#ff3030', x: p.x, y: p.y, z: p.z, vx: -p.vx * 1.5, vy: -p.vy * 1.5, vz: -p.vz * 1.5, r: 4, life: 60 });
       } else hurtHero(1, p.x - p.vx * 10);
       dead = true;
     }
@@ -1328,8 +1389,8 @@ function drawVilgax(e, now) {
   ctx.restore();
 }
 
-function drawPickups(now) {
-  pickups.forEach((h, i) => {
+function pickupItems(now, items) {
+  pickups.forEach((h, i) => items.push({ z: h.z, draw: () => atDepth(h.x, h.z, () => {
     const hx = h.x, hy = h.y + Math.sin(now / 200 + i) * 2;
     ctx.fillStyle = '#ff4d5e'; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2;
     ctx.beginPath();
@@ -1337,17 +1398,23 @@ function drawPickups(now) {
     ctx.bezierCurveTo(hx - 15, hy - 4, hx - 7, hy - 16, hx, hy - 7);
     ctx.bezierCurveTo(hx + 7, hy - 16, hx + 15, hy - 4, hx, hy + 9);
     ctx.fill(); ctx.stroke();
-  });
+  }) }));
 }
 
-function drawEnemies(now) {
-  enemies.forEach(e => e.type === 'drone' ? drawDrone(e, now) : drawVilgax(e, now));
-  enemyShots.forEach(p => {
+function enemyItems(now, items) {
+  enemies.forEach(e => items.push({ z: e.z, draw: () => atDepth(e.x, e.z, () => {
+    shadow(e.x, e.type === 'drone' ? 18 : 45);
+    if (e.type === 'drone') drawDrone(e, now); else drawVilgax(e, now);
+  }) }));
+}
+
+function drawEnemyShots() {
+  enemyShots.forEach(p => atDepth(p.x, p.z, () => {
     ctx.strokeStyle = '#ff3030'; ctx.lineWidth = 4; ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.vx * 2.5, p.y - p.vy * 2.5); ctx.stroke();
     ctx.strokeStyle = '#ffd0d0'; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.vx * 2.5, p.y - p.vy * 2.5); ctx.stroke();
-  });
+  }));
 }
 
 // Health hearts, the score, Vilgax's health bar and big announcements.
@@ -1394,7 +1461,7 @@ function allAliens() {
   const now = Date.now();
   if (now < army.until) return;
   army.born = now; army.until = now + ARMY_MS;
-  army.spots = ALIENS.map((a, i) => ({ a, x: cam + 50 + i * (W - 100) / (ALIENS.length - 1), face: 1 }));
+  army.spots = ALIENS.map((a, i) => ({ a, x: cam + 50 + i * (W - 100) / (ALIENS.length - 1), z: [15, 50, 85][i % 3], face: 1 }));
   banner('ALL ALIENS ATTACK!');
   flash = 15;
   let delay = 400;
@@ -1411,28 +1478,30 @@ function allAliens() {
 
 function armyPower(spot, fn) {
   const now = Date.now();
-  const target = enemies.slice().sort((p, q) => Math.abs(p.x - spot.x) - Math.abs(q.x - spot.x))[0];
+  const target = enemies.slice().sort((p, q) => Math.hypot(p.x - spot.x, p.z - spot.z) - Math.hypot(q.x - spot.x, q.z - spot.z))[0];
   const f = target ? Math.sign(target.x - spot.x) || 1 : (spot.x < hero.x ? -1 : 1);
   spot.face = f;
   const k = 0.6 * spot.a.size * SCALE;
   // use the alien's spot for a moment, without moving the real hero
-  const saved = { x: hero.x, y: hero.y, face: hero.face, vy: hero.vy, dash: hero.dash, dashV: hero.dashV,
+  const saved = { x: hero.x, y: hero.y, z: hero.z, face: hero.face, vy: hero.vy, dash: hero.dash, dashV: hero.dashV,
     rolling: hero.rolling, ghost: hero.ghost, slam: hero.slam, chompOnLand: hero.chompOnLand };
-  hero.x = spot.x; hero.y = GROUND; hero.face = f;
-  const before = shots.length;
+  hero.x = spot.x; hero.y = GROUND; hero.z = spot.z; hero.face = f;
+  const before = shots.length, beforeFx = effects.length;
   if (ARMY_SAFE.includes(fn)) fn(spot.x + f * 30 * k, GROUND - 45 * k, f, k, now);
   else if (fn === spitGoo) shots.push({ kind: 'goo', x: spot.x + f * 20, y: GROUND - 50, vx: f * 9, vy: -3, r: 10, life: 120, fall: 0.25, boom: true });
-  else if (target) blast(target.x, target.type === 'drone' ? target.y : target.y - 100, 50, 'slash', f, '#39ff6a'); // dashes, rolls, merges...
+  else if (target) blast(target.x, target.type === 'drone' ? target.y : target.y - 100, 50, 'slash', f, '#39ff6a', target.z); // dashes, rolls, merges...
+  stampDepth(before, beforeFx, spot.z);
   aimShots(shots.slice(before));
   Object.assign(hero, saved);
 }
 
-function drawArmy(now) {
+function armyItems(now, items) {
   if (now >= army.until) return;
   const t = now / 120;
-  army.spots.forEach((spot, i) => {
+  army.spots.forEach((spot, i) => items.push({ z: spot.z, draw: () => atDepth(spot.x, spot.z, () => {
     const appear = Math.min(1, (now - army.born - i * 40) / 300);
     if (appear <= 0) return;
+    shadow(spot.x, 26 * spot.a.size);
     ctx.save();
     ctx.globalAlpha = Math.min(appear, (army.until - now) / 400);
     ctx.translate(spot.x, GROUND + (1 - appear) * 40);
@@ -1440,11 +1509,12 @@ function drawArmy(now) {
     ctx.scale(spot.face * k, k);
     spot.a.draw(Math.sin(t / 2 + i) * 3, t);
     ctx.restore();
-  });
+  }) }));
 }
 
 // ---- Bellwood: the city where it all happens. It's much wider than the screen,
 // and the camera follows the hero as they walk through it. ----
+const BACK = GROUND + floorShift(DEPTH); // where the street meets the sidewalk
 const rand = i => { const x = Math.sin(i * 127.1) * 43758.5453; return x - Math.floor(x); };
 const SKYLINE = [];
 for (let x = 0, i = 0; x < WORLD * 0.5 + W; i++) {
@@ -1454,9 +1524,9 @@ for (let x = 0, i = 0; x < WORLD * 0.5 + W; i++) {
 }
 
 function drawSky() {
-  const sky = ctx.createLinearGradient(0, 0, 0, GROUND);
+  const sky = ctx.createLinearGradient(0, 0, 0, BACK);
   sky.addColorStop(0, '#1b2a4a'); sky.addColorStop(1, '#e98a5a');
-  ctx.fillStyle = sky; ctx.fillRect(-20, -20, W + 40, GROUND + 20);
+  ctx.fillStyle = sky; ctx.fillRect(-20, -20, W + 40, BACK + 20);
 }
 
 // Far buildings scroll slower than the street, so the city feels deep.
@@ -1464,54 +1534,54 @@ function drawSkyline() {
   const left = cam * 0.5 - 20, right = cam * 0.5 + W + 20;
   SKYLINE.forEach(([bx, bh, bw], i) => {
     if (bx + bw < left || bx > right) return;
-    const top = GROUND - 40 - bh;
+    const top = BACK - 40 - bh;
     ctx.fillStyle = i % 2 ? '#2c3550' : '#363f5c';
     ctx.fillRect(bx, top, bw, bh + 40);
     ctx.fillStyle = '#ffd77a';
-    for (let wy = top + 12; wy < GROUND - 50; wy += 22)
+    for (let wy = top + 12; wy < BACK - 50; wy += 22)
       for (let wx = bx + 10; wx < bx + bw - 14; wx += 18)
         if ((Math.floor(wx) * 7 + wy * 3 + i) % 5 < 3) ctx.fillRect(wx, wy, 8, 11);
   });
 }
 
 function sign(x, w, text, bg, fg) {
-  ctx.fillStyle = '#5f646c'; ctx.fillRect(x + 6, GROUND - 70, 4, 30); ctx.fillRect(x + w - 10, GROUND - 70, 4, 30);
-  ctx.fillStyle = bg; ctx.fillRect(x, GROUND - 100, w, 32);
+  ctx.fillStyle = '#5f646c'; ctx.fillRect(x + 6, BACK - 70, 4, 30); ctx.fillRect(x + w - 10, BACK - 70, 4, 30);
+  ctx.fillStyle = bg; ctx.fillRect(x, BACK - 100, w, 32);
   ctx.fillStyle = fg; ctx.font = 'bold 14px system-ui'; ctx.textAlign = 'center';
-  ctx.fillText(text, x + w / 2, GROUND - 79);
+  ctx.fillText(text, x + w / 2, BACK - 79);
   ctx.textAlign = 'left';
 }
 
 function shop(x, name, color) {
-  ctx.fillStyle = '#f4f1ea'; ctx.fillRect(x, GROUND - 90, 120, 50);
-  ctx.fillStyle = color; ctx.fillRect(x - 5, GROUND - 96, 130, 10);
-  ctx.fillStyle = '#9fd0ff'; ctx.fillRect(x + 10, GROUND - 78, 40, 30); ctx.fillRect(x + 70, GROUND - 78, 40, 30);
+  ctx.fillStyle = '#f4f1ea'; ctx.fillRect(x, BACK - 90, 120, 50);
+  ctx.fillStyle = color; ctx.fillRect(x - 5, BACK - 96, 130, 10);
+  ctx.fillStyle = '#9fd0ff'; ctx.fillRect(x + 10, BACK - 78, 40, 30); ctx.fillRect(x + 70, BACK - 78, 40, 30);
   ctx.fillStyle = color; ctx.font = 'bold 13px system-ui'; ctx.textAlign = 'center';
-  ctx.fillText(name, x + 60, GROUND - 100);
+  ctx.fillText(name, x + 60, BACK - 100);
   ctx.textAlign = 'left';
 }
 
 // Grandpa Max's RV from the show.
 function rustBucket(x) {
-  ctx.fillStyle = '#f2ead8'; ctx.fillRect(x, GROUND - 78, 150, 52);
-  ctx.fillStyle = '#c85a2a'; ctx.fillRect(x, GROUND - 52, 150, 8);
-  ctx.fillStyle = '#9fd0ff'; ctx.fillRect(x + 118, GROUND - 72, 26, 18); ctx.fillRect(x + 20, GROUND - 70, 30, 14); ctx.fillRect(x + 60, GROUND - 70, 30, 14);
+  ctx.fillStyle = '#f2ead8'; ctx.fillRect(x, BACK - 78, 150, 52);
+  ctx.fillStyle = '#c85a2a'; ctx.fillRect(x, BACK - 52, 150, 8);
+  ctx.fillStyle = '#9fd0ff'; ctx.fillRect(x + 118, BACK - 72, 26, 18); ctx.fillRect(x + 20, BACK - 70, 30, 14); ctx.fillRect(x + 60, BACK - 70, 30, 14);
   ctx.fillStyle = '#1c1c1c';
-  [x + 30, x + 120].forEach(wx => { ctx.beginPath(); ctx.arc(wx, GROUND - 24, 12, 0, Math.PI * 2); ctx.fill(); });
-  ctx.fillStyle = '#c85a2a'; ctx.font = 'bold 11px system-ui'; ctx.fillText('RUST BUCKET', x + 8, GROUND - 82);
+  [x + 30, x + 120].forEach(wx => { ctx.beginPath(); ctx.arc(wx, BACK - 24, 12, 0, Math.PI * 2); ctx.fill(); });
+  ctx.fillStyle = '#c85a2a'; ctx.font = 'bold 11px system-ui'; ctx.fillText('RUST BUCKET', x + 8, BACK - 82);
 }
 
 function drawStreet() {
   const left = cam - 20, right = cam + W + 20;
-  ctx.fillStyle = '#9a9ca3'; ctx.fillRect(left, GROUND - 40, right - left, 40);
-  ctx.fillStyle = '#7e8088'; for (let x = Math.floor(left / 60) * 60; x < right; x += 60) ctx.fillRect(x, GROUND - 40, 2, 40);
+  ctx.fillStyle = '#9a9ca3'; ctx.fillRect(left, BACK - 40, right - left, 40);
+  ctx.fillStyle = '#7e8088'; for (let x = Math.floor(left / 60) * 60; x < right; x += 60) ctx.fillRect(x, BACK - 40, 2, 40);
   sign(-10, 170, 'Welcome to Bellwood', '#2f7a3a', '#ffffff');
   rustBucket(220);
   shop(1400, 'Mr. Smoothy', '#e8486a');
   shop(2600, 'Burger Shack', '#d9822b');
   sign(WORLD - 220, 170, 'Leaving Bellwood', '#2f7a3a', '#ffffff');
-  ctx.fillStyle = '#3a3b40'; ctx.fillRect(left, GROUND, right - left, H - GROUND + 20);
-  ctx.fillStyle = '#f2d14a'; for (let x = Math.floor(left / 70) * 70 + 10; x < right; x += 70) ctx.fillRect(x, GROUND + 30, 36, 5);
+  ctx.fillStyle = '#3a3b40'; ctx.fillRect(left, BACK, right - left, H - BACK + 20);
+  ctx.fillStyle = '#f2d14a'; for (let x = Math.floor(left / 70) * 70 + 10; x < right; x += 70) ctx.fillRect(x, GROUND - 14, 36, 5);
 }
 
 function draw() {
@@ -1522,21 +1592,29 @@ function draw() {
   ctx.save(); ctx.translate(-cam * 0.5, 0); drawSkyline(); ctx.restore();
   ctx.save(); ctx.translate(-cam, 0);
   drawStreet();
+  // everything on the street, drawn from the back to the front
+  const items = [];
   // rocks, barrels and boxes: powers can smash them, and they come back after a few seconds
-  rocks.forEach(r => { if (!r.back && r.x + r.w > cam - 20 && r.x < cam + W + 20) drawThing(r, r.x, GROUND - r.h); });
-  drawPickups(now);
-  drawEnemies(now);
-  drawArmy(now);
-  ctx.save();
-  if (now < hero.hurtUntil && Math.floor(now / 100) % 2) ctx.globalAlpha = 0.4; // blink when hit
-  if (hero.alien) {
-    ctx.save();
-    if (now < hero.ghost) ctx.globalAlpha = 0.25;
-    if (hero.merged) drawMerged(now); else drawAlien(hero.x, hero.y, hero.alien);
-    ctx.restore();
-  } else drawBenjji(hero.x, hero.y);
-  ctx.restore();
+  rocks.forEach(r => {
+    if (!r.back && r.x + r.w > cam - 20 && r.x < cam + W + 20)
+      items.push({ z: r.z, draw: () => atDepth(r.x + r.w / 2, r.z, () => drawThing(r, r.x, GROUND - r.h)) });
+  });
+  pickupItems(now, items);
+  enemyItems(now, items);
+  armyItems(now, items);
+  items.push({ z: hero.z, draw: () => atDepth(hero.x, hero.z, () => {
+    shadow(hero.x, hero.merged ? hero.merged.w * 0.6 : 26 * (hero.alien ? hero.alien.size : 1));
+    if (now < hero.hurtUntil && Math.floor(now / 100) % 2) ctx.globalAlpha = 0.4; // blink when hit
+    if (hero.alien) {
+      ctx.save();
+      if (now < hero.ghost) ctx.globalAlpha = 0.25;
+      if (hero.merged) drawMerged(now); else drawAlien(hero.x, hero.y, hero.alien);
+      ctx.restore();
+    } else drawBenjji(hero.x, hero.y);
+  }) });
+  items.sort((p, q) => q.z - p.z).forEach(item => item.draw());
   drawPowers(now);
+  drawEnemyShots();
   ctx.restore();
   ctx.restore();
   drawStatus(now);
