@@ -44,9 +44,10 @@ addEventListener('resize', fit); fit();
 
 // The watch's aliens. Each one changes how Benjji moves.
 const ALIENS = [
-  { name: 'Blaze',   color: '#ff6a1a', speed: 5, jump: 13, size: 1.0 },
-  { name: 'Zoom',    color: '#2fa8ff', speed: 11, jump: 12, size: 0.9 },
-  { name: 'Boulder', color: '#8a7a66', speed: 3, jump: 9,  size: 1.4 },
+  { name: 'Heatblast',   draw: drawHeatblast,   speed: 5,  jump: 13, size: 1.0 },
+  { name: 'XLR8',        draw: drawXLR8,        speed: 12, jump: 12, size: 0.95 },
+  { name: 'Four Arms',   draw: drawFourArms,    speed: 3.5, jump: 10, size: 1.3 },
+  { name: 'Diamondhead', draw: drawDiamondhead, speed: 4.5, jump: 11, size: 1.05 },
 ];
 const HERO_TIME = 600; // frames (~10 seconds)
 
@@ -227,35 +228,170 @@ function drawBenjji(x, y) {
   ctx.restore();
 }
 
+// Each alien is drawn facing right with its feet at y = 0, like Benjji.
 function drawAlien(x, y, a) {
-  const s = a.size, t = Date.now() / 120;
+  const t = Date.now() / 120;
+  const s = hero.y < GROUND ? 0 : Math.sin(hero.walk) * 9;
   ctx.save();
-  ctx.translate(x, y + 20 * s * SCALE); // feet on the ground
-  ctx.scale(hero.face * s * SCALE, s * SCALE);
-  ctx.fillStyle = a.color;
-  if (a.name === 'Blaze') {
-    // flickering flames on top
-    ctx.fillStyle = '#ffd23a';
-    for (let i = -2; i <= 2; i++) {
-      ctx.beginPath();
-      ctx.moveTo(i * 7 - 6, -100); ctx.lineTo(i * 7, -125 - Math.sin(t + i) * 8); ctx.lineTo(i * 7 + 6, -100);
-      ctx.fill();
-    }
-    ctx.fillStyle = a.color;
-  }
-  if (a.name === 'Zoom') {
-    // speed streaks behind
-    ctx.strokeStyle = '#bfe6ff'; ctx.lineWidth = 3;
-    for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.moveTo(-25, -70 + i * 15); ctx.lineTo(-55, -70 + i * 15); ctx.stroke(); }
-  }
-  ctx.beginPath(); ctx.ellipse(0, -60, 22, 40, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(0, -100, 18, 0, Math.PI * 2); ctx.fill();
-  // glowing green eyes
-  ctx.fillStyle = '#39ff6a';
-  ctx.beginPath(); ctx.ellipse(8, -102, 5, 3, 0, 0, Math.PI * 2); ctx.fill();
-  // the watch symbol moves to the chest when transformed
-  hourglass(0, -62, 10, '#39ff6a');
+  ctx.translate(x, y);
+  ctx.scale(hero.face * a.size * SCALE, a.size * SCALE);
+  a.draw(s, t);
   ctx.restore();
+}
+
+function drawHeatblast(s, t) {
+  const rock = '#8e2416', rockDark = '#6a180e', glow = '#ffcf3a';
+  // back arm and legs
+  seg(-12, -84, -16 - s / 3, -58, 9, rockDark);
+  shape('#ff8a1f', () => ctx.arc(-16 - s / 3, -54, 6, 0, Math.PI * 2));
+  seg(-5, -46, -6 - s, -6, 12, rockDark);
+  seg(5, -46, 6 + s, -6, 12, rock);
+  // rocky body with glowing magma cracks
+  shape(rock, () => {
+    ctx.moveTo(-17, -88); ctx.lineTo(-6, -92); ctx.lineTo(16, -90); ctx.lineTo(19, -62);
+    ctx.lineTo(12, -44); ctx.lineTo(-12, -44); ctx.lineTo(-18, -63);
+  });
+  ctx.strokeStyle = glow; ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-14, -80); ctx.lineTo(-8, -72); ctx.lineTo(-12, -60); ctx.lineTo(-6, -50);
+  ctx.moveTo(14, -82); ctx.lineTo(9, -74); ctx.lineTo(13, -62); ctx.lineTo(8, -48);
+  ctx.moveTo(-4, -46); ctx.lineTo(0, -54); ctx.lineTo(5, -46);
+  ctx.moveTo(-5, -30); ctx.lineTo(-7, -20); ctx.moveTo(6, -32); ctx.lineTo(8, -18);
+  ctx.stroke();
+  hourglass(0, -68, 7, '#39ff6a');
+  // head made of fire, flickering
+  const flick = i => Math.sin(t * 1.3 + i * 1.7) * 4;
+  shape('#ff6a1a', () => {
+    ctx.moveTo(-14, -94); ctx.lineTo(-18, -114 + flick(1)); ctx.lineTo(-10, -110);
+    ctx.lineTo(-8, -134 + flick(2)); ctx.lineTo(0, -120); ctx.lineTo(6, -142 + flick(3));
+    ctx.lineTo(10, -122); ctx.lineTo(20, -134 + flick(4)); ctx.lineTo(18, -112);
+    ctx.lineTo(24, -104 + flick(5)); ctx.lineTo(18, -94);
+  });
+  shape('#ffb21f', () => {
+    ctx.moveTo(-8, -96); ctx.lineTo(-8, -118 + flick(6)); ctx.lineTo(0, -110);
+    ctx.lineTo(6, -128 + flick(7)); ctx.lineTo(10, -112); ctx.lineTo(16, -118 + flick(8)); ctx.lineTo(14, -96);
+  });
+  // face: bright eyes and a grin
+  ctx.fillStyle = '#fffbe0';
+  ctx.beginPath(); ctx.ellipse(5, -107, 3.5, 2, -0.2, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(13, -107, 3, 1.8, 0.2, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#7a1c06'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(5, -100); ctx.quadraticCurveTo(10, -97, 15, -100); ctx.stroke();
+  // front arm with a flaming fist
+  seg(13, -84, 26, -66, 9, rock);
+  shape('#ff8a1f', () => ctx.arc(29, -64, 7, 0, Math.PI * 2));
+  shape(glow, () => { ctx.moveTo(24, -68); ctx.lineTo(28, -82 + flick(9)); ctx.lineTo(31, -72); ctx.lineTo(36, -80 + flick(10)); ctx.lineTo(35, -66); });
+}
+
+function drawXLR8(s, t) {
+  const blue = '#1f4fc4', black = '#141824';
+  if (keys.left || keys.right) { // speed streaks
+    ctx.strokeStyle = '#9fd0ff'; ctx.lineWidth = 2;
+    for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(-70, -95 + i * 18); ctx.lineTo(-110 - (i % 2) * 20, -95 + i * 18); ctx.stroke(); }
+  }
+  // long striped tail
+  const tail = [[-8, -58], [-24, -56], [-40, -50], [-56, -42], [-70, -36]];
+  for (let i = 0; i < tail.length - 1; i++) {
+    seg(tail[i][0], tail[i][1], tail[i + 1][0], tail[i + 1][1], 12 - i * 2.5, i % 2 ? blue : black);
+  }
+  // legs bend like a raptor's, with a ball on each foot
+  [[-4, -s, black], [5, s, blue]].forEach(([hx, sw, c]) => {
+    seg(hx, -50, hx - 8, -28, 10, c);
+    seg(hx - 8, -28, hx + 2 + sw, -9, 7, black);
+    shape('#2b2b2b', () => ctx.arc(hx + 2 + sw, -6, 6, 0, Math.PI * 2));
+  });
+  // body leaning forward
+  shape(black, () => ctx.ellipse(4, -72, 15, 24, 0.35, 0, Math.PI * 2));
+  shape(blue, () => ctx.ellipse(9, -74, 7, 17, 0.35, 0, Math.PI * 2));
+  hourglass(6, -76, 6, '#39ff6a');
+  // arms with claws
+  seg(4, -88, 18, -76, 6, black);
+  seg(18, -76, 30, -80, 5, blue);
+  ctx.strokeStyle = '#e8e8e8'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); for (let i = 0; i < 3; i++) { ctx.moveTo(31, -80); ctx.lineTo(37, -84 + i * 3); } ctx.stroke();
+  // long head with the black visor
+  shape(blue, () => ctx.ellipse(20, -104, 17, 10, 0.15, 0, Math.PI * 2));
+  shape(black, () => { ctx.moveTo(6, -112); ctx.quadraticCurveTo(24, -120, 37, -104); ctx.lineTo(30, -102); ctx.quadraticCurveTo(20, -110, 6, -104); });
+  ctx.strokeStyle = '#6a8cff'; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(12, -112); ctx.quadraticCurveTo(22, -116, 30, -109); ctx.stroke();
+  ctx.strokeStyle = black; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(22, -97); ctx.lineTo(34, -99); ctx.stroke();
+}
+
+function drawFourArms(s, t) {
+  const red = '#c8312a', redDark = '#9c231e';
+  const arm = (sx, sy, ex, ey, hx, hy, c) => {
+    seg(sx, sy, ex, ey, 11, c); seg(ex, ey, hx, hy, 10, c);
+    shape(c, () => ctx.arc(hx, hy + 3, 7, 0, Math.PI * 2));
+  };
+  // back arms
+  arm(-18, -90, -26, -72, -24 - s / 3, -56, redDark);
+  arm(-16, -74, -24, -58, -20 - s / 3, -44, redDark);
+  // legs in black pants, bare red feet
+  seg(-7, -46, -7 - s, -8, 15, '#1c1c1c');
+  seg(7, -46, 7 + s, -8, 15, '#262626');
+  shape(red, () => ctx.ellipse(-5 - s, -3, 9, 4, 0, 0, Math.PI * 2));
+  shape(red, () => ctx.ellipse(9 + s, -3, 9, 4, 0, 0, Math.PI * 2));
+  // huge chest with muscles
+  shape(red, () => {
+    ctx.moveTo(-24, -96); ctx.quadraticCurveTo(2, -104, 26, -96);
+    ctx.lineTo(18, -50); ctx.lineTo(-14, -50);
+  });
+  ctx.strokeStyle = redDark; ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(1, -94); ctx.lineTo(1, -54);
+  ctx.moveTo(-14, -80); ctx.quadraticCurveTo(-6, -76, 1, -80);
+  ctx.moveTo(16, -80); ctx.quadraticCurveTo(8, -76, 1, -80);
+  ctx.moveTo(-8, -66); ctx.lineTo(10, -66); ctx.moveTo(-6, -58); ctx.lineTo(10, -58);
+  ctx.stroke();
+  // white belt with the watch symbol
+  shape('#f2f2f2', () => ctx.rect(-15, -54, 34, 8));
+  hourglass(2, -50, 6, '#39ff6a');
+  // small head on big shoulders, with four yellow eyes
+  shape(red, () => ctx.ellipse(4, -108, 12, 12, 0, 0, Math.PI * 2));
+  ctx.fillStyle = '#ffd400';
+  [[4, -113], [12, -113], [4, -106], [12, -106]].forEach(([ex, ey]) => {
+    ctx.beginPath(); ctx.ellipse(ex, ey, 2.6, 1.8, 0, 0, Math.PI * 2); ctx.fill();
+  });
+  ctx.strokeStyle = '#5a1210'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(4, -100); ctx.lineTo(13, -100); ctx.stroke();
+  shape('#1c1c1c', () => { ctx.moveTo(-6, -116); ctx.quadraticCurveTo(-4, -124, 6, -121); ctx.lineTo(-2, -114); });
+  // front arms
+  arm(20, -74, 30, -60, 34 + s / 3, -48, red);
+  arm(22, -90, 32, -76, 38 + s / 3, -66, red);
+}
+
+function drawDiamondhead(s, t) {
+  const gem = '#3fd18a', gemDark = '#1f9a62', gemLight = '#b6ffd9';
+  const crystal = (pts, c) => shape(c, () => { ctx.moveTo(pts[0][0], pts[0][1]); pts.slice(1).forEach(p => ctx.lineTo(p[0], p[1])); });
+  // back arm: crystal
+  seg(-12, -84, -16 - s / 3, -58, 9, gemDark);
+  crystal([[-20 - s / 3, -58], [-12 - s / 3, -58], [-16 - s / 3, -44]], gemDark);
+  // legs in a black suit, crystal feet
+  seg(-5, -46, -6 - s, -8, 12, '#1c1c1c');
+  seg(5, -46, 6 + s, -8, 12, '#262626');
+  crystal([[-12 - s, -1], [-6 - s, -10], [4 - s, -1]], gemDark);
+  crystal([[0 + s, -1], [6 + s, -10], [16 + s, -1]], gem);
+  // black and white suit
+  shape('#1c1c1c', () => { ctx.moveTo(-16, -88); ctx.lineTo(16, -88); ctx.lineTo(16, -46); ctx.lineTo(-16, -46); });
+  ctx.fillStyle = '#f2f2f2'; ctx.beginPath();
+  ctx.moveTo(-4, -88); ctx.lineTo(6, -88); ctx.lineTo(-2, -46); ctx.lineTo(-10, -46); ctx.fill();
+  hourglass(6, -70, 6, '#39ff6a');
+  // crystal shards on the shoulders
+  crystal([[-18, -86], [-26, -104], [-10, -88]], gem);
+  crystal([[12, -88], [24, -102], [18, -84]], gemDark);
+  // diamond head with a tall back spike
+  crystal([[-8, -94], [-16, -112], [-14, -140], [-2, -122], [8, -128], [20, -114], [18, -98], [6, -92]], gem);
+  ctx.strokeStyle = gemLight; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(-12, -134); ctx.lineTo(-6, -112); ctx.lineTo(8, -126); ctx.moveTo(-6, -112); ctx.lineTo(-2, -96); ctx.stroke();
+  ctx.fillStyle = '#0e5c3a';
+  ctx.beginPath(); ctx.moveTo(4, -110); ctx.lineTo(10, -112); ctx.lineTo(9, -108); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(13, -112); ctx.lineTo(18, -111); ctx.lineTo(17, -108); ctx.fill();
+  ctx.strokeStyle = '#0e5c3a'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(8, -101); ctx.lineTo(16, -102); ctx.stroke();
+  // front arm ending in a crystal blade
+  seg(13, -84, 24, -66, 9, gem);
+  crystal([[20, -68], [28, -66], [38, -58]], gemLight);
 }
 
 function draw() {
