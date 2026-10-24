@@ -82,7 +82,7 @@ const HERO_MS = 10 * 60 * 1000;
 const RECHARGE_MS = 5 * 1000;
 
 const hero = { x: 120, y: GROUND, vy: 0, face: 1, alien: null, until: 0, recharge: 0, dial: 0, walk: 0,
-  cool: 0, dash: 0, dashV: 0, rolling: 0, ghost: 0, pw: 0, ammo: 0, slam: 0, chompOnLand: 0, merged: null };
+  cool: 0, dash: 0, dashV: 0, rolling: 0, ghost: 0, hurtUntil: 0, pw: 0, ammo: 0, slam: 0, chompOnLand: 0, merged: null };
 const keys = {};
 
 // W / WATCH: press once to go hero, press again to change back.
@@ -159,6 +159,7 @@ function update() {
 
   const now = Date.now();
   updatePowers(now);
+  updateEnemies(now);
   if (a && now >= hero.until) changeBack(true);
   if (flash) flash--;
 
@@ -698,9 +699,28 @@ function usePower() {
   const a = hero.alien, now = Date.now();
   if (!a || now < hero.cool) return;
   hero.cool = now + 400;
-  if (hero.merged) return mergedShot(now);
-  const k = a.size * SCALE, f = hero.face;
+  if (hero.merged) { const before = shots.length; mergedShot(now); return aimShots(shots.slice(before)); }
+  const k = a.size * SCALE, f = hero.face, before = shots.length;
   a.powers[hero.pw][1](hero.x + f * 30 * k, hero.y - 45 * k, f, k, now);
+  aimShots(shots.slice(before));
+}
+
+// Straight shots aim at the nearest bad guy in front of the hero.
+function aimShots(list) {
+  const aimable = list.filter(p => !p.fall && ['fire', 'crystal', 'laser', 'plasma', 'wave'].includes(p.kind));
+  if (!aimable.length) return;
+  const p0 = aimable[0], dir = Math.sign(p0.vx);
+  const target = enemies.filter(e => Math.sign(e.x - p0.x) === dir)
+    .sort((a, b) => Math.abs(a.x - p0.x) - Math.abs(b.x - p0.x))[0];
+  if (!target) return;
+  const ty = target.type === 'drone' ? target.y : target.y - 110;
+  const dx = target.x - p0.x, dy = ty - p0.y, d = Math.hypot(dx, dy) || 1;
+  const baseVy = p0.vy;
+  aimable.forEach(p => {
+    const speed = Math.hypot(p.vx, p.vy);
+    p.vy = dy / d * speed + (p.vy - baseVy);
+    p.vx = dx / d * speed;
+  });
 }
 
 function fireballs(x, y, f) { shots.push({ kind: 'fire', x, y, vx: f * 10, vy: 1, r: 9, life: 90 }); }
@@ -735,6 +755,7 @@ function smashRock(r) {
 function blast(x, y, radius, kind, f, color) {
   effects.push({ kind, x, y, r: radius, f, color, born: Date.now(), life: kind === 'gas' ? 1200 : 400 });
   rocks.forEach(r => { if (Math.abs(r.x + r.w / 2 - x) < radius + r.w / 2 && y > GROUND - r.h - radius) smashRock(r); });
+  if (kind !== 'gas' || color !== '#9a9a9a') blastEnemies(x, y, radius, kind === 'quake' ? 4 : 2);
 }
 
 function hitsRock(x, y, pad) {
@@ -759,6 +780,8 @@ function updatePowers(now) {
   if (a && (now < hero.dash || now < hero.rolling)) {
     const r = hitsRock(hero.x, hero.y - 10, 20);
     if (r) { smashRock(r); shake = 6; }
+    const foe = enemyAt(hero.x, hero.y - 40, 30);
+    if (foe) damageEnemy(foe, 2);
   }
   for (let i = shots.length - 1; i >= 0; i--) {
     const p = shots[i];
@@ -766,6 +789,8 @@ function updatePowers(now) {
     let dead = --p.life <= 0 || p.x < -20 || p.x > W + 20;
     const r = hitsRock(p.x, p.y, p.r);
     if (r) { smashRock(r); if (!p.pierce) dead = true; }
+    const foe = !dead && enemyAt(p.x, p.y, p.r);
+    if (foe) { damageEnemy(foe, p.kind === 'plasma' || p.kind === 'goo' ? 3 : p.kind === 'laser' && p.color ? 2 : 1); if (!p.pierce) dead = true; }
     if (p.y >= GROUND) { p.y = GROUND; dead = true; }
     if (dead) {
       if (p.boom) blast(p.x, p.y, 70, 'boom');
@@ -794,7 +819,7 @@ function drawPowers(now) {
     } else if (p.kind === 'slime') {
       shape('#9ccf3a', () => ctx.ellipse(p.x, p.y, p.r, p.r * 0.75, 0, 0, Math.PI * 2));
     } else if (p.kind === 'laser') {
-      ctx.strokeStyle = '#39ff6a'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+      ctx.strokeStyle = p.color || '#39ff6a'; ctx.lineWidth = 5; ctx.lineCap = 'round';
       ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.vx * 3, p.y); ctx.stroke();
       ctx.strokeStyle = '#eaffea'; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.vx * 3, p.y); ctx.stroke();
@@ -855,6 +880,13 @@ function drawPowers(now) {
     } else if (e.kind === 'lure') {
       ctx.fillStyle = 'rgba(255,240,140,0.6)';
       ctx.beginPath(); ctx.arc(hero.x + hero.face * 40, hero.y - 250, 40 + 200 * t, 0, Math.PI * 2); ctx.fill();
+    } else if (e.kind === 'banner') {
+      ctx.fillStyle = '#ffffff'; ctx.strokeStyle = '#000'; ctx.lineWidth = 6; ctx.font = 'bold 48px system-ui'; ctx.textAlign = 'center';
+      ctx.strokeText(e.text, W / 2, H / 2 - 40); ctx.fillText(e.text, W / 2, H / 2 - 40);
+      ctx.textAlign = 'left';
+    } else if (e.kind === 'punch') {
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 4;
+      for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(e.x, e.y); ctx.lineTo(e.x + e.f * (20 + 30 * t), e.y - 30 + i * 20); ctx.stroke(); }
     } else if (e.kind === 'say') {
       ctx.fillStyle = '#ffffff'; ctx.font = 'bold 22px system-ui'; ctx.textAlign = 'center';
       ctx.fillText(e.text, Math.max(200, Math.min(W - 200, hero.x)), hero.y - 250);
@@ -1085,25 +1117,281 @@ function drawWildvine(s, t) {
   for (let i = 0; i < 4; i++) seg(36, -64, 44 + i, -68 + i * 3, 1.8, green);
 }
 
+// ---- Bad guys: Vilgax's robot drones, and Vilgax himself ----
+const enemies = [], enemyShots = [];
+const game = { score: 0, nextSpawn: Date.now() + 3000, nextVilgax: 8, over: 0 };
+const MAX_HP = 10;
+hero.hp = MAX_HP;
+
+function banner(text) { effects.push({ kind: 'banner', text, born: Date.now(), life: 2500 }); }
+
+function spawnDrone() {
+  const left = Math.random() < 0.5;
+  enemies.push({ type: 'drone', x: left ? -30 : W + 30, y: 170 + Math.random() * 110, hp: 3, maxHp: 3,
+    cool: Date.now() + 1500 + Math.random() * 1500, hurt: 0, phase: Math.random() * 6 });
+}
+
+function spawnVilgax() {
+  enemies.push({ type: 'vilgax', x: hero.x < W / 2 ? W + 60 : -60, y: GROUND, hp: 30, maxHp: 30, cool: Date.now() + 2000, hurt: 0, face: -1 });
+  banner('VILGAX IS HERE!');
+}
+
+// How big the hero is right now, for getting hit.
+function heroBox() {
+  if (hero.merged) return { x: hero.x, w: hero.merged.w / 2 + 4, top: hero.y - hero.merged.h };
+  const k = (hero.alien ? hero.alien.size : 1) * SCALE;
+  return { x: hero.x, w: 20 * k, top: hero.y - 120 * k };
+}
+
+function hurtHero(dmg, fromX) {
+  const now = Date.now();
+  if (now < hero.hurtUntil || now < game.over) return;
+  if (hero.alien && (now < hero.ghost || now < hero.rolling)) return; // invisible or rolled up in armour
+  hero.hp -= dmg;
+  hero.hurtUntil = now + 900;
+  hero.vy = -5;
+  hero.x += (hero.x < fromX ? -1 : 1) * 25;
+  shake = 8;
+  if (hero.hp <= 0) {
+    game.over = now + 3000;
+    banner('GAME OVER');
+  }
+}
+
+function enemyAt(x, y, pad) {
+  return enemies.find(e => e.type === 'drone'
+    ? Math.hypot(e.x - x, e.y - y) < 24 + pad
+    : Math.abs(e.x - x) < 40 + pad && y > e.y - 230 - pad && y < e.y + pad);
+}
+
+function damageEnemy(e, dmg) {
+  const now = Date.now();
+  if (now < e.hurt) return;
+  e.hp -= dmg;
+  e.hurt = now + 200;
+  if (e.hp > 0) return;
+  enemies.splice(enemies.indexOf(e), 1);
+  for (let i = 0; i < 12; i++) bits.push({ x: e.x, y: e.type === 'drone' ? e.y : e.y - 100, metal: true, vx: (Math.random() - 0.5) * 12, vy: -Math.random() * 10, life: 60 });
+  effects.push({ kind: 'boom', x: e.x, y: e.type === 'drone' ? e.y : e.y - 100, r: e.type === 'drone' ? 60 : 160, born: now, life: 500 });
+  if (e.type === 'vilgax') { game.score += 10; banner('YOU BEAT VILGAX!'); game.nextVilgax = game.score + 15; }
+  else game.score++;
+}
+
+// Every blast and contact attack hurts bad guys in range.
+function blastEnemies(x, y, radius, dmg) {
+  enemies.slice().forEach(e => {
+    const ey = e.type === 'drone' ? e.y : e.y - 100;
+    if (Math.abs(e.x - x) < radius + 30 && Math.abs(ey - y) < radius + (e.type === 'drone' ? 30 : 110)) damageEnemy(e, dmg);
+  });
+}
+
+function resetGame() {
+  enemies.length = 0; enemyShots.length = 0;
+  changeBack(false);
+  hero.hp = MAX_HP; hero.x = 120; hero.y = GROUND; hero.recharge = 0;
+  game.score = 0; game.nextVilgax = 8; game.nextSpawn = Date.now() + 3000; game.over = 0;
+}
+
+function updateEnemies(now) {
+  if (game.over) { if (now > game.over) resetGame(); return; }
+  const drones = enemies.filter(e => e.type === 'drone').length;
+  const boss = enemies.some(e => e.type === 'vilgax');
+  if (!boss && game.score >= game.nextVilgax) spawnVilgax();
+  if (now > game.nextSpawn && drones < Math.min(4, 2 + Math.floor(game.score / 6))) {
+    spawnDrone();
+    game.nextSpawn = now + 2500;
+  }
+  const hb = heroBox(), aimY = hero.y - (hero.y - hb.top) / 2;
+  enemies.forEach(e => {
+    if (e.type === 'drone') {
+      // hover near the hero, keeping a little distance, and shoot red lasers
+      let want = hero.x + (e.x < hero.x ? -170 : 170);
+      if (want < 40 || want > W - 40) want = hero.x - Math.sign(want - hero.x) * 170; // stay on screen
+      e.x += Math.max(-2.5, Math.min(2.5, (want - e.x) * 0.03));
+      e.y += Math.sin(now / 400 + e.phase) * 0.6;
+      if (now > e.cool && e.x > 0 && e.x < W) {
+        const dx = hero.x - e.x, dy = aimY - e.y, d = Math.hypot(dx, dy) || 1;
+        enemyShots.push({ x: e.x, y: e.y + 8, vx: dx / d * 6, vy: dy / d * 6, life: 150 });
+        e.cool = now + 1800 + Math.random() * 1500;
+      }
+    } else {
+      // Vilgax stomps toward the hero, punches up close and fires eye lasers from far away
+      e.face = hero.x < e.x ? -1 : 1;
+      if (Math.abs(hero.x - e.x) > 80) e.x += e.face * 1.6;
+      if (now > e.cool) {
+        if (Math.abs(hero.x - e.x) < 110) {
+          effects.push({ kind: 'punch', x: e.x + e.face * 60, y: e.y - 120, f: e.face, born: now, life: 300 });
+          if (Math.abs(hero.x - e.x) < 110 && hero.y > GROUND - 160) hurtHero(2, e.x);
+          e.cool = now + 1300;
+        } else {
+          [-6, 6].forEach(dy => {
+            const sx = e.x + e.face * 20, sy = e.y - 205 + dy;
+            const dx = hero.x - sx, ddy = aimY - sy, d = Math.hypot(dx, ddy) || 1;
+            enemyShots.push({ x: sx, y: sy, vx: dx / d * 7, vy: ddy / d * 7, life: 150 });
+          });
+          e.cool = now + 2600;
+        }
+      }
+    }
+  });
+  for (let i = enemyShots.length - 1; i >= 0; i--) {
+    const p = enemyShots[i];
+    p.x += p.vx; p.y += p.vy;
+    let dead = --p.life <= 0 || p.y > GROUND || p.x < -20 || p.x > W + 20;
+    if (!dead && Math.abs(p.x - hb.x) < hb.w && p.y > hb.top && p.y < hero.y) {
+      if (hero.alien && hero.alien.name === 'Diamondhead' && !hero.merged) {
+        // Diamondhead's crystal body bounces energy beams right back
+        shots.push({ kind: 'laser', color: '#ff3030', x: p.x, y: p.y, vx: -p.vx * 1.5, vy: -p.vy * 1.5, r: 4, life: 60 });
+      } else hurtHero(1, p.x - p.vx * 10);
+      dead = true;
+    }
+    if (dead) enemyShots.splice(i, 1);
+  }
+}
+
+function drawDrone(e, now) {
+  ctx.save(); ctx.translate(e.x, e.y);
+  if (now < e.hurt) ctx.globalAlpha = 0.5;
+  // jet flame
+  ctx.fillStyle = '#ffb21f';
+  ctx.beginPath(); ctx.moveTo(-6, 16); ctx.lineTo(0, 26 + Math.random() * 8); ctx.lineTo(6, 16); ctx.fill();
+  // grey-green armoured body, side fins and one big red eye
+  shape('#3d4a3f', () => { ctx.moveTo(-26, 0); ctx.lineTo(-14, -6); ctx.lineTo(-14, 6); });
+  shape('#3d4a3f', () => { ctx.moveTo(26, 0); ctx.lineTo(14, -6); ctx.lineTo(14, 6); });
+  shape('#5b6b5e', () => ctx.ellipse(0, 0, 18, 16, 0, 0, Math.PI * 2));
+  shape('#2a332c', () => ctx.ellipse(0, 6, 16, 8, 0, 0, Math.PI));
+  shape('#1a1a1a', () => ctx.ellipse(0, -2, 9, 7, 0, 0, Math.PI * 2));
+  ctx.fillStyle = '#ff2a2a'; ctx.beginPath(); ctx.arc(Math.sign(hero.x - e.x) * 2, -2, 4.5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#ffd0d0'; ctx.beginPath(); ctx.arc(Math.sign(hero.x - e.x) * 2 + 1.5, -3.5, 1.2, 0, Math.PI * 2); ctx.fill();
+  seg(0, -16, 0, -24, 2, '#3d4a3f');
+  ctx.restore();
+  if (e.hp < e.maxHp) {
+    ctx.fillStyle = '#330000'; ctx.fillRect(e.x - 18, e.y - 34, 36, 4);
+    ctx.fillStyle = '#ff3030'; ctx.fillRect(e.x - 18, e.y - 34, 36 * e.hp / e.maxHp, 4);
+  }
+}
+
+function drawVilgax(e, now) {
+  const step = Math.sin(now / 160) * 6;
+  ctx.save(); ctx.translate(e.x, e.y); ctx.scale(e.face * 2.3, 2.3);
+  if (now < e.hurt) ctx.globalAlpha = 0.6;
+  const green = '#4f8a3a', greenDark = '#3a6a2a', armour = '#b0201a', black = '#1c1c1c';
+  // legs in black armour with red boots
+  seg(-8, -40, -9 - step, -6, 12, black);
+  seg(8, -40, 9 + step, -6, 12, black);
+  shape(armour, () => ctx.ellipse(-7 - step, -3, 9, 4, 0, 0, Math.PI * 2));
+  shape(armour, () => ctx.ellipse(11 + step, -3, 9, 4, 0, 0, Math.PI * 2));
+  // back arm
+  seg(-20, -78, -26, -50, 10, greenDark);
+  // big armoured chest: red with a black middle and a silver plate
+  shape(armour, () => { ctx.moveTo(-24, -84); ctx.lineTo(24, -84); ctx.lineTo(16, -40); ctx.lineTo(-16, -40); });
+  shape(black, () => ctx.rect(-8, -84, 16, 44));
+  shape('#c9ced4', () => ctx.ellipse(0, -66, 7, 9, 0, 0, Math.PI * 2));
+  // shoulder pads
+  shape(black, () => ctx.ellipse(-20, -82, 10, 7, 0, 0, Math.PI * 2));
+  shape(black, () => ctx.ellipse(20, -82, 10, 7, 0, 0, Math.PI * 2));
+  // squid-like head: green, red eyes, tentacles hanging from his face
+  shape(green, () => ctx.ellipse(4, -100, 13, 15, 0, 0, Math.PI * 2));
+  ctx.strokeStyle = greenDark; ctx.lineWidth = 3; ctx.lineCap = 'round';
+  for (let i = 0; i < 5; i++) {
+    ctx.beginPath(); ctx.moveTo(2 + i * 3, -92);
+    ctx.quadraticCurveTo(4 + i * 3 + Math.sin(now / 200 + i) * 3, -84, 1 + i * 3, -78); ctx.stroke();
+  }
+  ctx.fillStyle = '#ff2a2a';
+  ctx.beginPath(); ctx.ellipse(6, -104, 3, 2, 0.2, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(14, -104, 2.5, 1.8, -0.2, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#1c1c1c'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(2, -109); ctx.lineTo(10, -107); ctx.moveTo(12, -107.5); ctx.lineTo(18, -109); ctx.stroke();
+  // front arm with a big fist
+  seg(20, -78, 30, -56, 11, green);
+  shape(green, () => ctx.arc(32, -52, 7, 0, Math.PI * 2));
+  ctx.restore();
+}
+
+function drawEnemies(now) {
+  enemies.forEach(e => e.type === 'drone' ? drawDrone(e, now) : drawVilgax(e, now));
+  enemyShots.forEach(p => {
+    ctx.strokeStyle = '#ff3030'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.vx * 2.5, p.y - p.vy * 2.5); ctx.stroke();
+    ctx.strokeStyle = '#ffd0d0'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.vx * 2.5, p.y - p.vy * 2.5); ctx.stroke();
+  });
+}
+
+// Health hearts, the score and Vilgax's health bar.
+function drawStatus(now) {
+  for (let i = 0; i < MAX_HP; i++) {
+    const hx = 18 + i * 20, hy = 44;
+    ctx.fillStyle = i < hero.hp ? '#ff4d5e' : 'rgba(255,255,255,0.2)';
+    ctx.beginPath();
+    ctx.moveTo(hx, hy + 5);
+    ctx.bezierCurveTo(hx - 9, hy - 3, hx - 4, hy - 10, hx, hy - 4);
+    ctx.bezierCurveTo(hx + 4, hy - 10, hx + 9, hy - 3, hx, hy + 5);
+    ctx.fill();
+  }
+  ctx.fillStyle = '#ffffff'; ctx.font = 'bold 16px system-ui'; ctx.textAlign = 'right';
+  ctx.fillText(`Bad guys beaten: ${game.score}`, W - 14, 50);
+  ctx.textAlign = 'left';
+  const boss = enemies.find(e => e.type === 'vilgax');
+  if (boss) {
+    ctx.fillStyle = '#ffffff'; ctx.font = 'bold 14px system-ui'; ctx.textAlign = 'center';
+    ctx.fillText('VILGAX', W / 2, 70);
+    ctx.fillStyle = '#330000'; ctx.fillRect(W / 2 - 150, 76, 300, 10);
+    ctx.fillStyle = '#ff3030'; ctx.fillRect(W / 2 - 150, 76, 300 * boss.hp / boss.maxHp, 10);
+    ctx.textAlign = 'left';
+  }
+}
+
+// ---- Bellwood: the city where it all happens ----
+const BUILDINGS = [[0, 150, 70], [70, 210, 90], [160, 120, 60], [220, 240, 80], [300, 170, 100],
+  [400, 260, 70], [470, 140, 90], [560, 200, 80], [640, 160, 70], [710, 230, 90]];
+function drawCity(now) {
+  const sky = ctx.createLinearGradient(0, 0, 0, GROUND);
+  sky.addColorStop(0, '#1b2a4a'); sky.addColorStop(1, '#e98a5a');
+  ctx.fillStyle = sky; ctx.fillRect(-20, -20, W + 40, GROUND + 20);
+  BUILDINGS.forEach(([bx, bh, bw], i) => {
+    const top = GROUND - 40 - bh;
+    ctx.fillStyle = i % 2 ? '#2c3550' : '#363f5c';
+    ctx.fillRect(bx, top, bw, bh + 40);
+    ctx.fillStyle = '#ffd77a';
+    for (let wy = top + 12; wy < GROUND - 50; wy += 22)
+      for (let wx = bx + 10; wx < bx + bw - 14; wx += 18)
+        if ((wx * 7 + wy * 3 + i) % 5 < 3) ctx.fillRect(wx, wy, 8, 11);
+  });
+  // Mr. Smoothy, Ben's favourite smoothie shop
+  ctx.fillStyle = '#f4f1ea'; ctx.fillRect(520, GROUND - 70, 90, 30);
+  ctx.fillStyle = '#e8486a'; ctx.fillRect(516, GROUND - 74, 98, 8);
+  ctx.fillStyle = '#e8486a'; ctx.font = 'bold 13px system-ui'; ctx.textAlign = 'center';
+  ctx.fillText('Mr. Smoothy', 565, GROUND - 50);
+  ctx.textAlign = 'left';
+  // sidewalk and road
+  ctx.fillStyle = '#9a9ca3'; ctx.fillRect(-20, GROUND - 40, W + 40, 40);
+  ctx.fillStyle = '#7e8088'; for (let x = 0; x < W; x += 60) ctx.fillRect(x, GROUND - 40, 2, 40);
+  ctx.fillStyle = '#3a3b40'; ctx.fillRect(-20, GROUND, W + 40, H - GROUND + 20);
+  ctx.fillStyle = '#f2d14a'; for (let x = 10; x < W; x += 70) ctx.fillRect(x, GROUND + 30, 36, 5);
+}
+
 function draw() {
   const now = Date.now();
   ctx.save();
   if (shake) ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
-  // sky and ground
-  ctx.fillStyle = '#1d3b52'; ctx.fillRect(-20, -20, W + 40, H + 40);
-  ctx.fillStyle = '#c99a5b'; ctx.fillRect(-20, GROUND, W + 40, H - GROUND + 20);
-  ctx.fillStyle = '#7d5a2f'; ctx.fillRect(-20, GROUND, W + 40, 6);
+  drawCity(now);
   // rocks, barrels and the box: powers can smash them, and they come back after a few seconds
   rocks.forEach(r => { if (!r.back) drawThing(r, r.x, GROUND - r.h); });
 
+  drawEnemies(now);
+  ctx.save();
+  if (now < hero.hurtUntil && Math.floor(now / 100) % 2) ctx.globalAlpha = 0.4; // blink when hit
   if (hero.alien) {
     ctx.save();
     if (now < hero.ghost) ctx.globalAlpha = 0.25;
     if (hero.merged) drawMerged(now); else drawAlien(hero.x, hero.y, hero.alien);
     ctx.restore();
   } else drawBenjji(hero.x, hero.y);
+  ctx.restore();
   drawPowers(now);
   ctx.restore();
+  drawStatus(now);
 
   if (flash) {
     ctx.fillStyle = `rgba(57,255,106,${flash / 25})`;
