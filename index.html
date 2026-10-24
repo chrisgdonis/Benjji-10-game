@@ -38,6 +38,8 @@ const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const hud = document.getElementById('hud');
 const W = canvas.width, H = canvas.height, GROUND = H - 70;
+const WORLD = 4000; // how wide the whole city is
+let cam = 0;        // left edge of the screen, in the city
 
 function fit() {
   const s = Math.min(innerWidth / W, innerHeight / H);
@@ -149,7 +151,7 @@ function update() {
   let moving = false;
   if (keys.left)  { hero.x -= speed; hero.face = -1; moving = true; }
   if (keys.right) { hero.x += speed; hero.face = 1;  moving = true; }
-  hero.x = Math.max(50, Math.min(W - 50, hero.x));
+  hero.x = Math.max(50, Math.min(WORLD - 50, hero.x));
   if (keys.up && a && a.fly && !m) hero.vy = Math.max(hero.vy - 1.2, -6); // flyers keep going up
   else if (keys.up && hero.y >= GROUND) hero.vy = -jump;
   hero.vy += 0.6;
@@ -160,6 +162,7 @@ function update() {
   const now = Date.now();
   updatePowers(now);
   updateEnemies(now);
+  cam = Math.max(0, Math.min(WORLD - W, hero.x - W / 2));
   if (a && now >= hero.until) changeBack(true);
   if (flash) flash--;
 
@@ -683,9 +686,12 @@ function drawGhostfreak(s, t) {
 
 // ---- Powers ----
 const shots = [], effects = [], bits = [];
-const rocks = [[150, 70], [480, 90], [700, 60]].map(([x, h]) => ({ x, h, w: 50, back: 0 }))
-  .concat([[320, 55], [610, 50]].map(([x, h]) => ({ x, h, w: 36, back: 0, metal: true })))
-  .concat([{ x: 245, h: 40, w: 40, back: 0, box: true }]);
+const rocks = [];
+for (let x = 480, i = 0; x < WORLD - 250; x += 230 + (i * 97) % 140, i++) {
+  if (i % 3 === 0) rocks.push({ x, h: 60 + (i * 13) % 30, w: 50, back: 0 });
+  else if (i % 3 === 1) rocks.push({ x, h: 50 + (i * 7) % 10, w: 36, back: 0, metal: true });
+  else rocks.push({ x, h: 40, w: 40, back: 0, box: true });
+}
 let shake = 0;
 
 // O / SWAP: switch to the alien's next power.
@@ -767,9 +773,9 @@ function updatePowers(now) {
   if (a && now < hero.dash) hero.x += hero.dashV;
   if (a && now < hero.rolling) {
     hero.x += hero.face * 10;
-    if (hero.x <= 50 || hero.x >= W - 50) hero.face *= -1; // bounce off the edges
+    if (hero.x <= 50 || hero.x >= WORLD - 50) hero.face *= -1; // bounce off the edges
   }
-  hero.x = Math.max(50, Math.min(W - 50, hero.x));
+  hero.x = Math.max(50, Math.min(WORLD - 50, hero.x));
   // Four Arms' jump slam and Ripjaws' shark dive hit when they land
   if (hero.slam && now > hero.slam && hero.y >= GROUND) { hero.slam = 0; groundSmash(); }
   if (hero.chompOnLand && now > hero.chompOnLand && hero.y >= GROUND) {
@@ -786,7 +792,7 @@ function updatePowers(now) {
   for (let i = shots.length - 1; i >= 0; i--) {
     const p = shots[i];
     p.x += p.vx; p.y += p.vy; p.vy += p.fall || 0;
-    let dead = --p.life <= 0 || p.x < -20 || p.x > W + 20;
+    let dead = --p.life <= 0 || p.x < cam - 40 || p.x > cam + W + 40;
     const r = hitsRock(p.x, p.y, p.r);
     if (r) { smashRock(r); if (!p.pierce) dead = true; }
     const foe = !dead && enemyAt(p.x, p.y, p.r);
@@ -880,16 +886,12 @@ function drawPowers(now) {
     } else if (e.kind === 'lure') {
       ctx.fillStyle = 'rgba(255,240,140,0.6)';
       ctx.beginPath(); ctx.arc(hero.x + hero.face * 40, hero.y - 250, 40 + 200 * t, 0, Math.PI * 2); ctx.fill();
-    } else if (e.kind === 'banner') {
-      ctx.fillStyle = '#ffffff'; ctx.strokeStyle = '#000'; ctx.lineWidth = 6; ctx.font = 'bold 48px system-ui'; ctx.textAlign = 'center';
-      ctx.strokeText(e.text, W / 2, H / 2 - 40); ctx.fillText(e.text, W / 2, H / 2 - 40);
-      ctx.textAlign = 'left';
     } else if (e.kind === 'punch') {
       ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 4;
       for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(e.x, e.y); ctx.lineTo(e.x + e.f * (20 + 30 * t), e.y - 30 + i * 20); ctx.stroke(); }
     } else if (e.kind === 'say') {
       ctx.fillStyle = '#ffffff'; ctx.font = 'bold 22px system-ui'; ctx.textAlign = 'center';
-      ctx.fillText(e.text, Math.max(200, Math.min(W - 200, hero.x)), hero.y - 250);
+      ctx.fillText(e.text, Math.max(cam + 200, Math.min(cam + W - 200, hero.x)), hero.y - 250);
     } else if (e.kind === 'hungry') {
       ctx.fillStyle = '#ffffff'; ctx.font = 'bold 34px system-ui'; ctx.textAlign = 'center';
       ctx.fillText('Hungry! Eat first', hero.x, hero.y - 290 - t * 20);
@@ -995,10 +997,10 @@ function merge(x, y, f, k, now) {
 function unmerge() {
   const r = hero.merged;
   if (!r) return;
-  r.x = Math.max(0, Math.min(W - r.w, hero.x - r.w / 2));
+  r.x = Math.max(0, Math.min(WORLD - r.w, hero.x - r.w / 2));
   r.back = 0;
   hero.merged = null;
-  hero.x = Math.min(W - 50, hero.x + hero.face * (r.w / 2 + 25));
+  hero.x = Math.min(WORLD - 50, hero.x + hero.face * (r.w / 2 + 25));
   hero.y = GROUND;
   flash = 10;
 }
@@ -1121,18 +1123,23 @@ function drawWildvine(s, t) {
 const enemies = [], enemyShots = [];
 const game = { score: 0, nextSpawn: Date.now() + 3000, nextVilgax: 8, over: 0 };
 const MAX_HP = 10;
+// Easy level: weak drones that shoot slowly, a weaker Vilgax, and hearts to pick up.
+const LEVEL = { droneHp: 1, droneShootMs: 3500, laserSpeed: 4, maxDrones: 3, spawnMs: 4000,
+  vilgaxHp: 12, vilgaxPunch: 1, vilgaxSpeed: 1.2, safeMs: 1500, heartChance: 0.4 };
+const pickups = [];
 hero.hp = MAX_HP;
 
 function banner(text) { effects.push({ kind: 'banner', text, born: Date.now(), life: 2500 }); }
 
 function spawnDrone() {
   const left = Math.random() < 0.5;
-  enemies.push({ type: 'drone', x: left ? -30 : W + 30, y: 170 + Math.random() * 110, hp: 3, maxHp: 3,
-    cool: Date.now() + 1500 + Math.random() * 1500, hurt: 0, phase: Math.random() * 6 });
+  enemies.push({ type: 'drone', x: left ? cam - 30 : cam + W + 30, y: 170 + Math.random() * 110, hp: LEVEL.droneHp, maxHp: LEVEL.droneHp,
+    cool: Date.now() + 2500 + Math.random() * 1500, hurt: 0, phase: Math.random() * 6 });
 }
 
 function spawnVilgax() {
-  enemies.push({ type: 'vilgax', x: hero.x < W / 2 ? W + 60 : -60, y: GROUND, hp: 30, maxHp: 30, cool: Date.now() + 2000, hurt: 0, face: -1 });
+  const side = hero.x + W / 2 + 60 < WORLD ? 1 : -1;
+  enemies.push({ type: 'vilgax', x: hero.x + side * (W / 2 + 60), y: GROUND, hp: LEVEL.vilgaxHp, maxHp: LEVEL.vilgaxHp, cool: Date.now() + 2500, hurt: 0, face: -side });
   banner('VILGAX IS HERE!');
 }
 
@@ -1148,7 +1155,7 @@ function hurtHero(dmg, fromX) {
   if (now < hero.hurtUntil || now < game.over) return;
   if (hero.alien && (now < hero.ghost || now < hero.rolling)) return; // invisible or rolled up in armour
   hero.hp -= dmg;
-  hero.hurtUntil = now + 900;
+  hero.hurtUntil = now + LEVEL.safeMs;
   hero.vy = -5;
   hero.x += (hero.x < fromX ? -1 : 1) * 25;
   shake = 8;
@@ -1175,6 +1182,9 @@ function damageEnemy(e, dmg) {
   effects.push({ kind: 'boom', x: e.x, y: e.type === 'drone' ? e.y : e.y - 100, r: e.type === 'drone' ? 60 : 160, born: now, life: 500 });
   if (e.type === 'vilgax') { game.score += 10; banner('YOU BEAT VILGAX!'); game.nextVilgax = game.score + 15; }
   else game.score++;
+  // bad guys sometimes drop a heart (Vilgax always drops three)
+  const drops = e.type === 'vilgax' ? 3 : Math.random() < LEVEL.heartChance ? 1 : 0;
+  for (let i = 0; i < drops; i++) pickups.push({ x: e.x + (i - 1) * 40, y: e.type === 'drone' ? e.y : e.y - 100, vy: -3 });
 }
 
 // Every blast and contact attack hurts bad guys in range.
@@ -1186,7 +1196,7 @@ function blastEnemies(x, y, radius, dmg) {
 }
 
 function resetGame() {
-  enemies.length = 0; enemyShots.length = 0;
+  enemies.length = 0; enemyShots.length = 0; pickups.length = 0;
   changeBack(false);
   hero.hp = MAX_HP; hero.x = 120; hero.y = GROUND; hero.recharge = 0;
   game.score = 0; game.nextVilgax = 8; game.nextSpawn = Date.now() + 3000; game.over = 0;
@@ -1197,39 +1207,46 @@ function updateEnemies(now) {
   const drones = enemies.filter(e => e.type === 'drone').length;
   const boss = enemies.some(e => e.type === 'vilgax');
   if (!boss && game.score >= game.nextVilgax) spawnVilgax();
-  if (now > game.nextSpawn && drones < Math.min(4, 2 + Math.floor(game.score / 6))) {
+  if (now > game.nextSpawn && drones < Math.min(LEVEL.maxDrones, 1 + Math.floor(game.score / 5))) {
     spawnDrone();
-    game.nextSpawn = now + 2500;
+    game.nextSpawn = now + LEVEL.spawnMs;
+  }
+  // hearts fall to the ground and heal the hero when picked up
+  for (let i = pickups.length - 1; i >= 0; i--) {
+    const h = pickups[i];
+    h.vy += 0.4; h.y = Math.min(GROUND - 14, h.y + h.vy);
+    if (Math.abs(h.x - hero.x) < 40 && hero.y > h.y - 20) {
+      hero.hp = Math.min(MAX_HP, hero.hp + 1);
+      pickups.splice(i, 1);
+    }
   }
   const hb = heroBox(), aimY = hero.y - (hero.y - hb.top) / 2;
   enemies.forEach(e => {
     if (e.type === 'drone') {
       // hover near the hero, keeping a little distance, and shoot red lasers
       let want = hero.x + (e.x < hero.x ? -170 : 170);
-      if (want < 40 || want > W - 40) want = hero.x - Math.sign(want - hero.x) * 170; // stay on screen
-      e.x += Math.max(-2.5, Math.min(2.5, (want - e.x) * 0.03));
+      if (want < cam + 40 || want > cam + W - 40) want = hero.x - Math.sign(want - hero.x) * 170; // stay on screen
+      e.x += Math.max(-5, Math.min(5, (want - e.x) * 0.03));
       e.y += Math.sin(now / 400 + e.phase) * 0.6;
-      if (now > e.cool && e.x > 0 && e.x < W) {
+      if (now > e.cool && e.x > cam && e.x < cam + W) {
         const dx = hero.x - e.x, dy = aimY - e.y, d = Math.hypot(dx, dy) || 1;
-        enemyShots.push({ x: e.x, y: e.y + 8, vx: dx / d * 6, vy: dy / d * 6, life: 150 });
-        e.cool = now + 1800 + Math.random() * 1500;
+        enemyShots.push({ x: e.x, y: e.y + 8, vx: dx / d * LEVEL.laserSpeed, vy: dy / d * LEVEL.laserSpeed, life: 200 });
+        e.cool = now + LEVEL.droneShootMs + Math.random() * 1500;
       }
     } else {
       // Vilgax stomps toward the hero, punches up close and fires eye lasers from far away
       e.face = hero.x < e.x ? -1 : 1;
-      if (Math.abs(hero.x - e.x) > 80) e.x += e.face * 1.6;
+      if (Math.abs(hero.x - e.x) > 80) e.x += e.face * LEVEL.vilgaxSpeed;
       if (now > e.cool) {
         if (Math.abs(hero.x - e.x) < 110) {
           effects.push({ kind: 'punch', x: e.x + e.face * 60, y: e.y - 120, f: e.face, born: now, life: 300 });
-          if (Math.abs(hero.x - e.x) < 110 && hero.y > GROUND - 160) hurtHero(2, e.x);
-          e.cool = now + 1300;
+          if (Math.abs(hero.x - e.x) < 110 && hero.y > GROUND - 160) hurtHero(LEVEL.vilgaxPunch, e.x);
+          e.cool = now + 2000;
         } else {
-          [-6, 6].forEach(dy => {
-            const sx = e.x + e.face * 20, sy = e.y - 205 + dy;
-            const dx = hero.x - sx, ddy = aimY - sy, d = Math.hypot(dx, ddy) || 1;
-            enemyShots.push({ x: sx, y: sy, vx: dx / d * 7, vy: ddy / d * 7, life: 150 });
-          });
-          e.cool = now + 2600;
+          const sx = e.x + e.face * 20, sy = e.y - 205;
+          const dx = hero.x - sx, ddy = aimY - sy, d = Math.hypot(dx, ddy) || 1;
+          enemyShots.push({ x: sx, y: sy, vx: dx / d * LEVEL.laserSpeed, vy: ddy / d * LEVEL.laserSpeed, life: 200 });
+          e.cool = now + 3500;
         }
       }
     }
@@ -1237,7 +1254,7 @@ function updateEnemies(now) {
   for (let i = enemyShots.length - 1; i >= 0; i--) {
     const p = enemyShots[i];
     p.x += p.vx; p.y += p.vy;
-    let dead = --p.life <= 0 || p.y > GROUND || p.x < -20 || p.x > W + 20;
+    let dead = --p.life <= 0 || p.y > GROUND || p.x < cam - 40 || p.x > cam + W + 40;
     if (!dead && Math.abs(p.x - hb.x) < hb.w && p.y > hb.top && p.y < hero.y) {
       if (hero.alien && hero.alien.name === 'Diamondhead' && !hero.merged) {
         // Diamondhead's crystal body bounces energy beams right back
@@ -1308,6 +1325,18 @@ function drawVilgax(e, now) {
   ctx.restore();
 }
 
+function drawPickups(now) {
+  pickups.forEach((h, i) => {
+    const hx = h.x, hy = h.y + Math.sin(now / 200 + i) * 2;
+    ctx.fillStyle = '#ff4d5e'; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(hx, hy + 9);
+    ctx.bezierCurveTo(hx - 15, hy - 4, hx - 7, hy - 16, hx, hy - 7);
+    ctx.bezierCurveTo(hx + 7, hy - 16, hx + 15, hy - 4, hx, hy + 9);
+    ctx.fill(); ctx.stroke();
+  });
+}
+
 function drawEnemies(now) {
   enemies.forEach(e => e.type === 'drone' ? drawDrone(e, now) : drawVilgax(e, now));
   enemyShots.forEach(p => {
@@ -1318,8 +1347,14 @@ function drawEnemies(now) {
   });
 }
 
-// Health hearts, the score and Vilgax's health bar.
+// Health hearts, the score, Vilgax's health bar and big announcements.
 function drawStatus(now) {
+  effects.filter(e => e.kind === 'banner').forEach(e => {
+    ctx.save(); ctx.globalAlpha = 1 - (now - e.born) / e.life;
+    ctx.fillStyle = '#ffffff'; ctx.strokeStyle = '#000'; ctx.lineWidth = 6; ctx.font = 'bold 48px system-ui'; ctx.textAlign = 'center';
+    ctx.strokeText(e.text, W / 2, H / 2 - 40); ctx.fillText(e.text, W / 2, H / 2 - 40);
+    ctx.restore();
+  });
   for (let i = 0; i < MAX_HP; i++) {
     const hx = 18 + i * 20, hy = 44;
     ctx.fillStyle = i < hero.hp ? '#ff4d5e' : 'rgba(255,255,255,0.2)';
@@ -1331,6 +1366,8 @@ function drawStatus(now) {
   }
   ctx.fillStyle = '#ffffff'; ctx.font = 'bold 16px system-ui'; ctx.textAlign = 'right';
   ctx.fillText(`Bad guys beaten: ${game.score}`, W - 14, 50);
+  ctx.font = 'bold 12px system-ui';
+  ctx.fillText(`Easy level · ${Math.round(hero.x / (WORLD - 50) * 100)}% through Bellwood`, W - 14, 68);
   ctx.textAlign = 'left';
   const boss = enemies.find(e => e.type === 'vilgax');
   if (boss) {
@@ -1342,43 +1379,88 @@ function drawStatus(now) {
   }
 }
 
-// ---- Bellwood: the city where it all happens ----
-const BUILDINGS = [[0, 150, 70], [70, 210, 90], [160, 120, 60], [220, 240, 80], [300, 170, 100],
-  [400, 260, 70], [470, 140, 90], [560, 200, 80], [640, 160, 70], [710, 230, 90]];
-function drawCity(now) {
+// ---- Bellwood: the city where it all happens. It's much wider than the screen,
+// and the camera follows the hero as they walk through it. ----
+const rand = i => { const x = Math.sin(i * 127.1) * 43758.5453; return x - Math.floor(x); };
+const SKYLINE = [];
+for (let x = 0, i = 0; x < WORLD * 0.5 + W; i++) {
+  const bw = 60 + rand(i) * 50;
+  SKYLINE.push([x, 110 + rand(i + 50) * 160, bw]);
+  x += bw;
+}
+
+function drawSky() {
   const sky = ctx.createLinearGradient(0, 0, 0, GROUND);
   sky.addColorStop(0, '#1b2a4a'); sky.addColorStop(1, '#e98a5a');
   ctx.fillStyle = sky; ctx.fillRect(-20, -20, W + 40, GROUND + 20);
-  BUILDINGS.forEach(([bx, bh, bw], i) => {
+}
+
+// Far buildings scroll slower than the street, so the city feels deep.
+function drawSkyline() {
+  const left = cam * 0.5 - 20, right = cam * 0.5 + W + 20;
+  SKYLINE.forEach(([bx, bh, bw], i) => {
+    if (bx + bw < left || bx > right) return;
     const top = GROUND - 40 - bh;
     ctx.fillStyle = i % 2 ? '#2c3550' : '#363f5c';
     ctx.fillRect(bx, top, bw, bh + 40);
     ctx.fillStyle = '#ffd77a';
     for (let wy = top + 12; wy < GROUND - 50; wy += 22)
       for (let wx = bx + 10; wx < bx + bw - 14; wx += 18)
-        if ((wx * 7 + wy * 3 + i) % 5 < 3) ctx.fillRect(wx, wy, 8, 11);
+        if ((Math.floor(wx) * 7 + wy * 3 + i) % 5 < 3) ctx.fillRect(wx, wy, 8, 11);
   });
-  // Mr. Smoothy, Ben's favourite smoothie shop
-  ctx.fillStyle = '#f4f1ea'; ctx.fillRect(520, GROUND - 70, 90, 30);
-  ctx.fillStyle = '#e8486a'; ctx.fillRect(516, GROUND - 74, 98, 8);
-  ctx.fillStyle = '#e8486a'; ctx.font = 'bold 13px system-ui'; ctx.textAlign = 'center';
-  ctx.fillText('Mr. Smoothy', 565, GROUND - 50);
+}
+
+function sign(x, w, text, bg, fg) {
+  ctx.fillStyle = '#5f646c'; ctx.fillRect(x + 6, GROUND - 70, 4, 30); ctx.fillRect(x + w - 10, GROUND - 70, 4, 30);
+  ctx.fillStyle = bg; ctx.fillRect(x, GROUND - 100, w, 32);
+  ctx.fillStyle = fg; ctx.font = 'bold 14px system-ui'; ctx.textAlign = 'center';
+  ctx.fillText(text, x + w / 2, GROUND - 79);
   ctx.textAlign = 'left';
-  // sidewalk and road
-  ctx.fillStyle = '#9a9ca3'; ctx.fillRect(-20, GROUND - 40, W + 40, 40);
-  ctx.fillStyle = '#7e8088'; for (let x = 0; x < W; x += 60) ctx.fillRect(x, GROUND - 40, 2, 40);
-  ctx.fillStyle = '#3a3b40'; ctx.fillRect(-20, GROUND, W + 40, H - GROUND + 20);
-  ctx.fillStyle = '#f2d14a'; for (let x = 10; x < W; x += 70) ctx.fillRect(x, GROUND + 30, 36, 5);
+}
+
+function shop(x, name, color) {
+  ctx.fillStyle = '#f4f1ea'; ctx.fillRect(x, GROUND - 90, 120, 50);
+  ctx.fillStyle = color; ctx.fillRect(x - 5, GROUND - 96, 130, 10);
+  ctx.fillStyle = '#9fd0ff'; ctx.fillRect(x + 10, GROUND - 78, 40, 30); ctx.fillRect(x + 70, GROUND - 78, 40, 30);
+  ctx.fillStyle = color; ctx.font = 'bold 13px system-ui'; ctx.textAlign = 'center';
+  ctx.fillText(name, x + 60, GROUND - 100);
+  ctx.textAlign = 'left';
+}
+
+// Grandpa Max's RV from the show.
+function rustBucket(x) {
+  ctx.fillStyle = '#f2ead8'; ctx.fillRect(x, GROUND - 78, 150, 52);
+  ctx.fillStyle = '#c85a2a'; ctx.fillRect(x, GROUND - 52, 150, 8);
+  ctx.fillStyle = '#9fd0ff'; ctx.fillRect(x + 118, GROUND - 72, 26, 18); ctx.fillRect(x + 20, GROUND - 70, 30, 14); ctx.fillRect(x + 60, GROUND - 70, 30, 14);
+  ctx.fillStyle = '#1c1c1c';
+  [x + 30, x + 120].forEach(wx => { ctx.beginPath(); ctx.arc(wx, GROUND - 24, 12, 0, Math.PI * 2); ctx.fill(); });
+  ctx.fillStyle = '#c85a2a'; ctx.font = 'bold 11px system-ui'; ctx.fillText('RUST BUCKET', x + 8, GROUND - 82);
+}
+
+function drawStreet() {
+  const left = cam - 20, right = cam + W + 20;
+  ctx.fillStyle = '#9a9ca3'; ctx.fillRect(left, GROUND - 40, right - left, 40);
+  ctx.fillStyle = '#7e8088'; for (let x = Math.floor(left / 60) * 60; x < right; x += 60) ctx.fillRect(x, GROUND - 40, 2, 40);
+  sign(-10, 170, 'Welcome to Bellwood', '#2f7a3a', '#ffffff');
+  rustBucket(220);
+  shop(1400, 'Mr. Smoothy', '#e8486a');
+  shop(2600, 'Burger Shack', '#d9822b');
+  sign(WORLD - 220, 170, 'Leaving Bellwood', '#2f7a3a', '#ffffff');
+  ctx.fillStyle = '#3a3b40'; ctx.fillRect(left, GROUND, right - left, H - GROUND + 20);
+  ctx.fillStyle = '#f2d14a'; for (let x = Math.floor(left / 70) * 70 + 10; x < right; x += 70) ctx.fillRect(x, GROUND + 30, 36, 5);
 }
 
 function draw() {
   const now = Date.now();
   ctx.save();
   if (shake) ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
-  drawCity(now);
-  // rocks, barrels and the box: powers can smash them, and they come back after a few seconds
-  rocks.forEach(r => { if (!r.back) drawThing(r, r.x, GROUND - r.h); });
-
+  drawSky();
+  ctx.save(); ctx.translate(-cam * 0.5, 0); drawSkyline(); ctx.restore();
+  ctx.save(); ctx.translate(-cam, 0);
+  drawStreet();
+  // rocks, barrels and boxes: powers can smash them, and they come back after a few seconds
+  rocks.forEach(r => { if (!r.back && r.x + r.w > cam - 20 && r.x < cam + W + 20) drawThing(r, r.x, GROUND - r.h); });
+  drawPickups(now);
   drawEnemies(now);
   ctx.save();
   if (now < hero.hurtUntil && Math.floor(now / 100) % 2) ctx.globalAlpha = 0.4; // blink when hit
@@ -1390,6 +1472,7 @@ function draw() {
   } else drawBenjji(hero.x, hero.y);
   ctx.restore();
   drawPowers(now);
+  ctx.restore();
   ctx.restore();
   drawStatus(now);
 
