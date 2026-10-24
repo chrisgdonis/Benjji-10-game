@@ -67,7 +67,7 @@ const ALIENS = [
   { name: 'Ripjaws',     draw: drawRipjaws,     speed: 4,   jump: 11, size: 1.05,
     powers: [['Mega chomp', chomp], ['Shark dive', sharkDive], ['Lure flash', lureFlash]] },
   { name: 'Upgrade',     draw: drawUpgrade,     speed: 5,   jump: 12, size: 1.0,
-    powers: [['Laser beam', laser], ['Tech merge cannon', megaBlast], ['Goo stretch punch', stretchPunch]] },
+    powers: [['Merge & control', merge], ['Laser beam', laser], ['Tech merge cannon', megaBlast], ['Goo stretch punch', stretchPunch]] },
   { name: 'Ghostfreak',  draw: drawGhostfreak,  speed: 5,   jump: 10, size: 1.05, fly: true,
     powers: [['Go invisible', vanish], ['Ghost tentacles', tentacles], ['Scare', scare]] },
   { name: 'Cannonbolt',  draw: drawCannonbolt,  speed: 4,   jump: 11, size: 1.1,
@@ -82,7 +82,7 @@ const HERO_MS = 10 * 60 * 1000;
 const RECHARGE_MS = 5 * 1000;
 
 const hero = { x: 120, y: GROUND, vy: 0, face: 1, alien: null, until: 0, recharge: 0, dial: 0, walk: 0,
-  cool: 0, dash: 0, dashV: 0, rolling: 0, ghost: 0, pw: 0, ammo: 0, slam: 0, chompOnLand: 0 };
+  cool: 0, dash: 0, dashV: 0, rolling: 0, ghost: 0, pw: 0, ammo: 0, slam: 0, chompOnLand: 0, merged: null };
 const keys = {};
 
 // W / WATCH: press once to go hero, press again to change back.
@@ -102,6 +102,7 @@ function dial() {
 }
 
 function changeBack(timedOut) {
+  unmerge();
   hero.alien = null;
   hero.dash = hero.rolling = hero.ghost = hero.slam = hero.chompOnLand = hero.ammo = 0;
   if (timedOut) hero.recharge = Date.now() + RECHARGE_MS;
@@ -143,12 +144,13 @@ function clock(ms) {
 
 function update() {
   const a = hero.alien;
-  const speed = a ? a.speed : 4, jump = a ? a.jump : 11;
+  const m = hero.merged && MERGE[kindOf(hero.merged)];
+  const speed = m ? m.speed : a ? a.speed : 4, jump = m ? m.jump : a ? a.jump : 11;
   let moving = false;
   if (keys.left)  { hero.x -= speed; hero.face = -1; moving = true; }
   if (keys.right) { hero.x += speed; hero.face = 1;  moving = true; }
   hero.x = Math.max(50, Math.min(W - 50, hero.x));
-  if (keys.up && a && a.fly) hero.vy = Math.max(hero.vy - 1.2, -6); // flyers keep going up
+  if (keys.up && a && a.fly && !m) hero.vy = Math.max(hero.vy - 1.2, -6); // flyers keep going up
   else if (keys.up && hero.y >= GROUND) hero.vy = -jump;
   hero.vy += 0.6;
   hero.y = Math.max(170, Math.min(GROUND, hero.y + hero.vy));
@@ -160,7 +162,8 @@ function update() {
   if (a && now >= hero.until) changeBack(true);
   if (flash) flash--;
 
-  if (hero.alien) hud.textContent = `${a.name} · P: ${a.powers[hero.pw][0]} (${hero.pw + 1}/${a.powers.length}) · O swaps${a.name === 'Upchuck' ? ` · goo: ${hero.ammo}` : ''} · ${clock(hero.until - now)} left`;
+  if (hero.merged) hud.textContent = `Upgrade is controlling the ${MERGE[kindOf(hero.merged)].name}! · P: shoot · O: jump out · ${clock(hero.until - now)} left`;
+  else if (hero.alien) hud.textContent = `${a.name} · P: ${a.powers[hero.pw][0]} (${hero.pw + 1}/${a.powers.length}) · O swaps${a.name === 'Upchuck' ? ` · goo: ${hero.ammo}` : ''} · ${clock(hero.until - now)} left`;
   else if (now < hero.recharge) hud.textContent = `Watch recharging… ${Math.ceil((hero.recharge - now) / 1000)}s`;
   else hud.textContent = `Benjji · alien ${hero.dial + 1} of ${ALIENS.length}: ${ALIENS[hero.dial].name} · Y to pick, W to go hero, W again to change back`;
 }
@@ -624,11 +627,13 @@ function drawGhostfreak(s, t) {
 // ---- Powers ----
 const shots = [], effects = [], bits = [];
 const rocks = [[150, 70], [480, 90], [700, 60]].map(([x, h]) => ({ x, h, w: 50, back: 0 }))
-  .concat([[320, 55], [610, 50]].map(([x, h]) => ({ x, h, w: 36, back: 0, metal: true })));
+  .concat([[320, 55], [610, 50]].map(([x, h]) => ({ x, h, w: 36, back: 0, metal: true })))
+  .concat([{ x: 245, h: 40, w: 40, back: 0, box: true }]);
 let shake = 0;
 
 // O / SWAP: switch to the alien's next power.
 function swapPower() {
+  if (hero.merged) return unmerge();
   if (hero.alien) hero.pw = (hero.pw + 1) % hero.alien.powers.length;
 }
 
@@ -637,6 +642,7 @@ function usePower() {
   const a = hero.alien, now = Date.now();
   if (!a || now < hero.cool) return;
   hero.cool = now + 400;
+  if (hero.merged) return mergedShot(now);
   const k = a.size * SCALE, f = hero.face;
   a.powers[hero.pw][1](hero.x + f * 30 * k, hero.y - 45 * k, f, k, now);
 }
@@ -662,7 +668,7 @@ function superBrain(x, y, f, k, now) {
 function smashRock(r) {
   if (r.back) return;
   r.back = Date.now() + 4000;
-  for (let i = 0; i < 10; i++) bits.push({ x: r.x + r.w / 2, metal: r.metal, y: GROUND - r.h / 2, vx: (Math.random() - 0.5) * 10, vy: -Math.random() * 9, life: 60 });
+  for (let i = 0; i < 10; i++) bits.push({ x: r.x + r.w / 2, metal: r.metal, box: r.box, y: GROUND - r.h / 2, vx: (Math.random() - 0.5) * 10, vy: -Math.random() * 9, life: 60 });
 }
 
 function blast(x, y, radius, kind, f, color) {
@@ -739,7 +745,7 @@ function drawPowers(now) {
       shape('#6b8e23', () => ctx.ellipse(p.x, p.y, 6, 8, now / 100, 0, Math.PI * 2));
     }
   });
-  bits.forEach(b => { ctx.fillStyle = b.metal ? '#9aa3ab' : '#8b5e34'; ctx.fillRect(b.x - 4, b.y - 4, 8, 8); });
+  bits.forEach(b => { ctx.fillStyle = b.metal ? '#9aa3ab' : b.box ? '#b5833f' : '#8b5e34'; ctx.fillRect(b.x - 4, b.y - 4, 8, 8); });
   effects.forEach(e => {
     const t = (now - e.born) / e.life;
     ctx.save(); ctx.globalAlpha = 1 - t;
@@ -784,6 +790,9 @@ function drawPowers(now) {
     } else if (e.kind === 'lure') {
       ctx.fillStyle = 'rgba(255,240,140,0.6)';
       ctx.beginPath(); ctx.arc(hero.x + hero.face * 40, hero.y - 250, 40 + 200 * t, 0, Math.PI * 2); ctx.fill();
+    } else if (e.kind === 'say') {
+      ctx.fillStyle = '#ffffff'; ctx.font = 'bold 22px system-ui'; ctx.textAlign = 'center';
+      ctx.fillText(e.text, Math.max(200, Math.min(W - 200, hero.x)), hero.y - 250);
     } else if (e.kind === 'boo' || e.kind === 'hungry') {
       ctx.fillStyle = e.kind === 'boo' ? '#e8e0ff' : '#ffffff'; ctx.font = 'bold 34px system-ui'; ctx.textAlign = 'center';
       ctx.fillText(e.kind === 'boo' ? 'BOO!' : 'Hungry! Eat first', hero.x, hero.y - 290 - t * 20);
@@ -864,6 +873,82 @@ function drawUpchuck(s, t) {
   seg(16, -56, 26, -46, 6, green);
 }
 
+// ---- Upgrade's merge: he goes inside a box, barrel or rock and takes control of it ----
+const MERGE = {
+  box:    { name: 'laser box',     speed: 5, jump: 12 },
+  barrel: { name: 'barrel cannon', speed: 7, jump: 10 },
+  rock:   { name: 'rock tank',     speed: 3, jump: 8 },
+};
+const kindOf = r => r.metal ? 'barrel' : r.box ? 'box' : 'rock';
+
+function merge(x, y, f, k, now) {
+  const target = rocks.filter(r => !r.back && Math.abs(r.x + r.w / 2 - hero.x) < 130)
+    .sort((p, q) => Math.abs(p.x + p.w / 2 - hero.x) - Math.abs(q.x + q.w / 2 - hero.x))[0];
+  if (!target) { effects.push({ kind: 'say', text: 'Get closer to a box, barrel or rock!', born: now, life: 1500 }); return; }
+  effects.push({ kind: 'stretch', x, y, f: Math.sign(target.x + target.w / 2 - hero.x) || f, born: now, life: 300, color: '#141414' });
+  setTimeout(() => {
+    if (!hero.alien || target.back) return;
+    target.back = Infinity; // it's with Upgrade now
+    hero.merged = target;
+    hero.x = target.x + target.w / 2;
+    flash = 10;
+  }, 250);
+}
+
+// O / SWAP while merged: jump back out and leave the thing where it is.
+function unmerge() {
+  const r = hero.merged;
+  if (!r) return;
+  r.x = Math.max(0, Math.min(W - r.w, hero.x - r.w / 2));
+  r.back = 0;
+  hero.merged = null;
+  hero.x = Math.min(W - 50, hero.x + hero.face * (r.w / 2 + 25));
+  hero.y = GROUND;
+  flash = 10;
+}
+
+// P while merged: each thing shoots in its own way.
+function mergedShot(now) {
+  const r = hero.merged, f = hero.face, x = hero.x + f * r.w / 2, y = hero.y - r.h / 2;
+  const kind = kindOf(r);
+  if (kind === 'barrel') { shake = 5; shots.push({ kind: 'plasma', x, y, vx: f * 11, vy: 0.5, r: 12, life: 90, boom: true }); }
+  else if (kind === 'box') { [-8, 8].forEach(dy => shots.push({ kind: 'laser', x, y: y + dy, vx: f * 20, vy: 0.6, r: 4, life: 45, pierce: true })); }
+  else { shots.push({ kind: 'crystal', color: '#8b5e34', x, y, vx: f * 10, vy: -2, r: 9, life: 90, fall: 0.2 }); }
+}
+
+function drawMerged(now) {
+  const r = hero.merged, x = hero.x - r.w / 2, y = hero.y - r.h;
+  drawThing(r, x, y);
+  // Upgrade's black and green covering the whole thing
+  ctx.fillStyle = 'rgba(10,10,10,0.55)'; ctx.fillRect(x, y, r.w, r.h);
+  ctx.strokeStyle = '#39ff6a'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x + 4, y + r.h - 4); ctx.lineTo(x + 4, y + r.h / 2); ctx.lineTo(x + r.w / 2, y + r.h / 2 - 6);
+  ctx.moveTo(x + r.w - 4, y + 6); ctx.lineTo(x + r.w - 4, y + r.h - 10); ctx.lineTo(x + r.w / 2, y + r.h - 10);
+  ctx.stroke();
+  // his one big eye, looking the way he's going
+  const ex = hero.x + hero.face * r.w * 0.18, ey = y + Math.min(16, r.h * 0.3);
+  ctx.fillStyle = '#39ff6a'; ctx.beginPath(); ctx.arc(ex, ey, 8, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#141414'; ctx.beginPath(); ctx.arc(ex, ey, 5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#39ff6a'; ctx.beginPath(); ctx.arc(ex + hero.face * 1.5, ey, 2.2, 0, Math.PI * 2); ctx.fill();
+  hourglass(hero.x, y + r.h * 0.65, 6, omni());
+}
+
+function drawThing(r, x, y) {
+  if (r.metal) {
+    ctx.fillStyle = '#8a939b'; ctx.fillRect(x, y, r.w, r.h);
+    ctx.fillStyle = '#5f676e'; ctx.fillRect(x, y + 10, r.w, 5); ctx.fillRect(x, y + r.h - 18, r.w, 5);
+    ctx.fillStyle = '#b8c0c7'; ctx.fillRect(x + 6, y + 3, 5, r.h - 6);
+  } else if (r.box) {
+    ctx.fillStyle = '#b5833f'; ctx.fillRect(x, y, r.w, r.h);
+    ctx.strokeStyle = '#7a5424'; ctx.lineWidth = 3;
+    ctx.strokeRect(x + 1.5, y + 1.5, r.w - 3, r.h - 3);
+    ctx.beginPath(); ctx.moveTo(x + 3, y + 3); ctx.lineTo(x + r.w - 3, y + r.h - 3); ctx.moveTo(x + r.w - 3, y + 3); ctx.lineTo(x + 3, y + r.h - 3); ctx.stroke();
+  } else {
+    ctx.fillStyle = '#8b5e34'; ctx.fillRect(x, y, r.w, r.h);
+  }
+}
+
 function drawCannonbolt(s, t) {
   const shell = '#f1ead2', plate = '#e6b400', skin = '#3a3a3a';
   if (Date.now() < hero.rolling) { // curled up into a ball
@@ -929,22 +1014,13 @@ function draw() {
   ctx.fillStyle = '#1d3b52'; ctx.fillRect(-20, -20, W + 40, H + 40);
   ctx.fillStyle = '#c99a5b'; ctx.fillRect(-20, GROUND, W + 40, H - GROUND + 20);
   ctx.fillStyle = '#7d5a2f'; ctx.fillRect(-20, GROUND, W + 40, 6);
-  // desert rocks: powers can smash them, and they come back after a few seconds
-  ctx.fillStyle = '#8b5e34';
-  rocks.forEach(r => {
-    if (r.back) return;
-    if (r.metal) { // metal barrel
-      ctx.fillStyle = '#8a939b'; ctx.fillRect(r.x, GROUND - r.h, r.w, r.h);
-      ctx.fillStyle = '#5f676e'; ctx.fillRect(r.x, GROUND - r.h + 10, r.w, 5); ctx.fillRect(r.x, GROUND - 18, r.w, 5);
-      ctx.fillStyle = '#b8c0c7'; ctx.fillRect(r.x + 6, GROUND - r.h + 3, 5, r.h - 6);
-      ctx.fillStyle = '#8b5e34';
-    } else ctx.fillRect(r.x, GROUND - r.h, r.w, r.h);
-  });
+  // rocks, barrels and the box: powers can smash them, and they come back after a few seconds
+  rocks.forEach(r => { if (!r.back) drawThing(r, r.x, GROUND - r.h); });
 
   if (hero.alien) {
     ctx.save();
     if (now < hero.ghost) ctx.globalAlpha = 0.25;
-    drawAlien(hero.x, hero.y, hero.alien);
+    if (hero.merged) drawMerged(now); else drawAlien(hero.x, hero.y, hero.alien);
     ctx.restore();
   } else drawBenjji(hero.x, hero.y);
   drawPowers(now);
