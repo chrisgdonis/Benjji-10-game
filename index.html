@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Benjji 10</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0b1a10; color: #eaffea;
+    font-family: system-ui, sans-serif; overflow: hidden; touch-action: none; }
+  #game { display: block; margin: 0 auto; background: #1d3b52; max-width: 100%; }
+  #hud { position: absolute; top: 8px; left: 0; right: 0; text-align: center;
+    font-weight: 700; text-shadow: 0 2px 0 #000; pointer-events: none; }
+  .pad { position: absolute; bottom: 16px; display: flex; gap: 12px; }
+  .pad button { width: 64px; height: 64px; border-radius: 50%; border: 3px solid #39ff6a;
+    background: #102a17cc; color: #eaffea; font-size: 24px; font-weight: 700; }
+  #left { left: 16px; }
+  #right { right: 16px; }
+  #watchBtn { width: 80px; height: 80px; background: #39ff6a; color: #000; font-size: 14px; }
+</style>
+</head>
+<body>
+<canvas id="game" width="800" height="450"></canvas>
+<div id="hud">Benjji — arrows to move, ↑ to jump, W (or the green button) to use the watch</div>
+<div class="pad" id="left">
+  <button data-key="left">◀</button>
+  <button data-key="right">▶</button>
+</div>
+<div class="pad" id="right">
+  <button data-key="up">▲</button>
+  <button id="watchBtn" data-key="watch">WATCH</button>
+</div>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const hud = document.getElementById('hud');
+const W = canvas.width, H = canvas.height, GROUND = H - 70;
+
+function fit() {
+  const s = Math.min(innerWidth / W, innerHeight / H);
+  canvas.style.width = W * s + 'px';
+  canvas.style.height = H * s + 'px';
+}
+addEventListener('resize', fit); fit();
+
+// The watch's aliens. Each one changes how Benjji moves.
+const ALIENS = [
+  { name: 'Blaze',   color: '#ff6a1a', speed: 5, jump: 13, size: 1.0 },
+  { name: 'Zoom',    color: '#2fa8ff', speed: 11, jump: 12, size: 0.9 },
+  { name: 'Boulder', color: '#8a7a66', speed: 3, jump: 9,  size: 1.4 },
+];
+const HERO_TIME = 600; // frames (~10 seconds)
+
+const hero = { x: 120, y: GROUND, vy: 0, face: 1, alien: null, timer: 0, dial: 0, walk: 0 };
+const keys = {};
+
+function useWatch() {
+  if (hero.alien) return;
+  hero.alien = ALIENS[hero.dial];
+  hero.dial = (hero.dial + 1) % ALIENS.length;
+  hero.timer = HERO_TIME;
+  flash = 20;
+}
+
+addEventListener('keydown', e => {
+  const k = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ' ': 'up', w: 'watch', W: 'watch' }[e.key];
+  if (!k) return;
+  e.preventDefault();
+  if (k === 'watch') useWatch(); else keys[k] = true;
+});
+addEventListener('keyup', e => {
+  const k = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ' ': 'up' }[e.key];
+  if (k) keys[k] = false;
+});
+document.querySelectorAll('[data-key]').forEach(b => {
+  const k = b.dataset.key;
+  b.addEventListener('pointerdown', e => { e.preventDefault(); if (k === 'watch') useWatch(); else keys[k] = true; });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach(t => b.addEventListener(t, () => keys[k] = false));
+});
+
+let flash = 0;
+
+function update() {
+  const a = hero.alien;
+  const speed = a ? a.speed : 4, jump = a ? a.jump : 11;
+  let moving = false;
+  if (keys.left)  { hero.x -= speed; hero.face = -1; moving = true; }
+  if (keys.right) { hero.x += speed; hero.face = 1;  moving = true; }
+  hero.x = Math.max(30, Math.min(W - 30, hero.x));
+  if (keys.up && hero.y >= GROUND) hero.vy = -jump;
+  hero.vy += 0.6;
+  hero.y = Math.min(GROUND, hero.y + hero.vy);
+  if (hero.y >= GROUND) hero.vy = 0;
+  hero.walk = moving ? hero.walk + 0.25 : 0;
+
+  if (a && --hero.timer <= 0) { hero.alien = null; flash = 20; }
+  if (flash) flash--;
+
+  hud.textContent = a
+    ? `${a.name}! Back to Benjji in ${Math.ceil(hero.timer / 60)}s`
+    : `Benjji — next alien: ${ALIENS[hero.dial].name}. Press W or WATCH!`;
+}
+
+// The hourglass symbol: two green triangles meeting in the middle.
+function hourglass(cx, cy, r, glow) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.fillStyle = '#111';
+  ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.8, -r * 0.6); ctx.lineTo(r * 0.8, -r * 0.6); ctx.lineTo(0, 0);
+  ctx.moveTo(-r * 0.8,  r * 0.6); ctx.lineTo(r * 0.8,  r * 0.6); ctx.lineTo(0, 0);
+  ctx.fill();
+  ctx.strokeStyle = '#ccc'; ctx.lineWidth = Math.max(1, r * 0.2);
+  ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
+}
+
+function drawBenjji(x, y) {
+  const legSwing = Math.sin(hero.walk) * 8;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(hero.face, 1);
+  // legs (green pants)
+  ctx.strokeStyle = '#3d5a2a'; ctx.lineWidth = 9; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-5, -40); ctx.lineTo(-5 + legSwing, -4); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(5, -40);  ctx.lineTo(5 - legSwing, -4);  ctx.stroke();
+  // shoes
+  ctx.fillStyle = '#222';
+  ctx.fillRect(-10 + legSwing, -6, 14, 6);
+  ctx.fillRect(-2 - legSwing, -6, 14, 6);
+  // body (white shirt with a black stripe)
+  ctx.fillStyle = '#f4f4f4';
+  ctx.fillRect(-14, -78, 28, 40);
+  ctx.fillStyle = '#111';
+  ctx.fillRect(-3, -78, 6, 40);
+  // back arm
+  ctx.strokeStyle = '#f1c9a5'; ctx.lineWidth = 7;
+  ctx.beginPath(); ctx.moveTo(-10, -72); ctx.lineTo(-14 - legSwing / 2, -46); ctx.stroke();
+  // head
+  ctx.fillStyle = '#f1c9a5';
+  ctx.beginPath(); ctx.arc(0, -94, 16, 0, Math.PI * 2); ctx.fill();
+  // brown hair
+  ctx.fillStyle = '#6b3d1e';
+  ctx.beginPath(); ctx.arc(0, -98, 16, Math.PI, 0); ctx.fill();
+  ctx.fillRect(-16, -100, 8, 10);
+  // eye and smile
+  ctx.fillStyle = '#2a7d3a';
+  ctx.beginPath(); ctx.arc(7, -95, 2.5, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#7a3b2a'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(6, -88, 4, 0.2, Math.PI - 0.6); ctx.stroke();
+  // front arm, raised a little to show off the watch
+  ctx.strokeStyle = '#f1c9a5'; ctx.lineWidth = 7;
+  ctx.beginPath(); ctx.moveTo(10, -72); ctx.lineTo(22, -52); ctx.stroke();
+  // the watch: green band + hourglass face
+  ctx.fillStyle = '#2b2b2b';
+  ctx.fillRect(15, -60, 12, 9);
+  hourglass(21, -56, 7, '#39ff6a');
+  ctx.restore();
+}
+
+function drawAlien(x, y, a) {
+  const s = a.size, t = Date.now() / 120;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(hero.face * s, s);
+  ctx.fillStyle = a.color;
+  if (a.name === 'Blaze') {
+    // flickering flames on top
+    ctx.fillStyle = '#ffd23a';
+    for (let i = -2; i <= 2; i++) {
+      ctx.beginPath();
+      ctx.moveTo(i * 7 - 6, -100); ctx.lineTo(i * 7, -125 - Math.sin(t + i) * 8); ctx.lineTo(i * 7 + 6, -100);
+      ctx.fill();
+    }
+    ctx.fillStyle = a.color;
+  }
+  if (a.name === 'Zoom') {
+    // speed streaks behind
+    ctx.strokeStyle = '#bfe6ff'; ctx.lineWidth = 3;
+    for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.moveTo(-25, -70 + i * 15); ctx.lineTo(-55, -70 + i * 15); ctx.stroke(); }
+  }
+  ctx.beginPath(); ctx.ellipse(0, -60, 22, 40, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(0, -100, 18, 0, Math.PI * 2); ctx.fill();
+  // glowing green eyes
+  ctx.fillStyle = '#39ff6a';
+  ctx.beginPath(); ctx.ellipse(8, -102, 5, 3, 0, 0, Math.PI * 2); ctx.fill();
+  // the watch symbol moves to the chest when transformed
+  hourglass(0, -62, 10, '#39ff6a');
+  ctx.restore();
+}
+
+function draw() {
+  // sky and ground
+  ctx.fillStyle = '#1d3b52'; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#c99a5b'; ctx.fillRect(0, GROUND, W, H - GROUND);
+  ctx.fillStyle = '#7d5a2f'; ctx.fillRect(0, GROUND, W, 6);
+  // some desert rocks
+  ctx.fillStyle = '#8b5e34';
+  [[150, 40], [480, 60], [700, 30]].forEach(([rx, rh]) => ctx.fillRect(rx, GROUND - rh, 50, rh));
+
+  if (hero.alien) drawAlien(hero.x, hero.y, hero.alien);
+  else drawBenjji(hero.x, hero.y);
+
+  if (flash) {
+    ctx.fillStyle = `rgba(57,255,106,${flash / 25})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+}
+
+(function loop() { update(); draw(); requestAnimationFrame(loop); })();
+</script>
+</body>
+</html>
