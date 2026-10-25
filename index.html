@@ -1202,15 +1202,53 @@ function drawWildvine(s, t) {
 
 // ---- Bad guys: Vilgax's robot drones, and Vilgax himself ----
 const enemies = [], enemyShots = [];
-const game = { score: 0, nextSpawn: Date.now() + 3000, nextVilgax: 8, over: 0 };
+const game = { score: 0, nextSpawn: Date.now() + 3000, nextVilgax: 8, over: 0, level: 0, levelStart: 0, between: 0 };
 const MAX_HP = 10;
-// Easy level: weak drones that shoot slowly, a weaker Vilgax, and hearts to pick up.
-const LEVEL = { droneHp: 1, droneShootMs: 3500, laserSpeed: 4, maxDrones: 3, spawnMs: 4000,
-  vilgaxHp: 12, vilgaxPunch: 1, vilgaxSpeed: 1.2, safeMs: 1500, heartChance: 0.4 };
+// Five levels, each a little harder. Beat enough drones and Vilgax shows up; beat him to finish the level.
+const LEVELS = [
+  { name: 'Sunset in Bellwood', sky: ['#1b2a4a', '#e98a5a'], dronesToBoss: 8,
+    droneHp: 1, droneShootMs: 3500, laserSpeed: 4, maxDrones: 3, spawnMs: 4000,
+    vilgaxHp: 12, vilgaxPunch: 1, vilgaxSpeed: 1.2, safeMs: 1500, heartChance: 0.4 },
+  { name: 'Bellwood at Night', sky: ['#05081a', '#1d2a55'], dronesToBoss: 10,
+    droneHp: 1, droneShootMs: 3000, laserSpeed: 4.5, maxDrones: 4, spawnMs: 3500,
+    vilgaxHp: 18, vilgaxPunch: 1, vilgaxSpeed: 1.4, safeMs: 1400, heartChance: 0.35 },
+  { name: 'Morning Attack', sky: ['#3d8fd6', '#cfeeff'], dronesToBoss: 12,
+    droneHp: 2, droneShootMs: 2700, laserSpeed: 5, maxDrones: 4, spawnMs: 3200,
+    vilgaxHp: 24, vilgaxPunch: 2, vilgaxSpeed: 1.5, safeMs: 1200, heartChance: 0.3 },
+  { name: 'Thunderstorm', sky: ['#1e222b', '#4f5664'], dronesToBoss: 14, rain: true,
+    droneHp: 2, droneShootMs: 2300, laserSpeed: 5.5, maxDrones: 5, spawnMs: 2800,
+    vilgaxHp: 30, vilgaxPunch: 2, vilgaxSpeed: 1.6, safeMs: 1100, heartChance: 0.3 },
+  { name: "Vilgax's Final Attack", sky: ['#2a0505', '#d6402a'], dronesToBoss: 16,
+    droneHp: 3, droneShootMs: 2000, laserSpeed: 6, maxDrones: 5, spawnMs: 2500,
+    vilgaxHp: 40, vilgaxPunch: 2, vilgaxSpeed: 1.8, safeMs: 1000, heartChance: 0.3 },
+];
+let LEVEL = LEVELS[0];
+
+function startLevel(i) {
+  game.level = Math.min(i, LEVELS.length - 1);
+  LEVEL = LEVELS[game.level];
+  enemies.length = 0; enemyShots.length = 0;
+  hero.hp = MAX_HP;
+  game.levelStart = game.score;
+  game.nextVilgax = game.score + LEVEL.dronesToBoss;
+  game.nextSpawn = Date.now() + 3000;
+  game.between = 0;
+  banner(`LEVEL ${game.level + 1}: ${LEVEL.name}`);
+}
+
+function levelComplete() {
+  const last = game.level === LEVELS.length - 1;
+  banner(last ? 'YOU SAVED BELLWOOD!' : `LEVEL ${game.level + 1} COMPLETE!`);
+  game.between = Date.now() + 3500; // a short break before the next level
+  enemyShots.length = 0;
+}
 const pickups = [];
 hero.hp = MAX_HP;
 
-function banner(text) { effects.push({ kind: 'banner', text, born: Date.now(), life: 2500 }); }
+function banner(text) {
+  for (let i = effects.length - 1; i >= 0; i--) if (effects[i].kind === 'banner') effects.splice(i, 1); // one at a time
+  effects.push({ kind: 'banner', text, born: Date.now(), life: 2500 });
+}
 
 function spawnDrone() {
   const left = Math.random() < 0.5;
@@ -1262,7 +1300,7 @@ function damageEnemy(e, dmg) {
   enemies.splice(enemies.indexOf(e), 1);
   for (let i = 0; i < 12; i++) bits.push({ x: e.x, z: e.z, y: e.type === 'drone' ? e.y : e.y - 100, metal: true, vx: (Math.random() - 0.5) * 12, vy: -Math.random() * 10, life: 60 });
   effects.push({ kind: 'boom', x: e.x, z: e.z, y: e.type === 'drone' ? e.y : e.y - 100, r: e.type === 'drone' ? 60 : 160, born: now, life: 500 });
-  if (e.type === 'vilgax') { game.score += 10; banner('YOU BEAT VILGAX!'); game.nextVilgax = game.score + 15; }
+  if (e.type === 'vilgax') { game.score += 10; levelComplete(); }
   else game.score++;
   // bad guys sometimes drop a heart (Vilgax always drops three)
   const drops = e.type === 'vilgax' ? 3 : Math.random() < LEVEL.heartChance ? 1 : 0;
@@ -1277,19 +1315,27 @@ function blastEnemies(x, y, radius, dmg, z) {
   });
 }
 
-function resetGame() {
+// After GAME OVER you try the same level again; RESTART goes back to level 1.
+function resetGame(level = game.level) {
   enemies.length = 0; enemyShots.length = 0; pickups.length = 0;
   changeBack(false);
   hero.hp = MAX_HP; hero.x = 120; hero.y = GROUND; hero.z = 40; hero.recharge = 0;
-  game.score = 0; game.nextVilgax = 8; game.nextSpawn = Date.now() + 3000; game.over = 0;
+  game.over = 0;
+  if (level === 0) game.score = 0;
+  else game.score = game.levelStart;
+  startLevel(level);
 }
 
 function updateEnemies(now) {
   if (game.over) { if (now > game.over) resetGame(); return; }
+  if (game.between) {
+    if (now > game.between) startLevel(game.level === LEVELS.length - 1 ? game.level : game.level + 1);
+    else game.nextSpawn = now + 1000;
+  }
   const drones = enemies.filter(e => e.type === 'drone').length;
   const boss = enemies.some(e => e.type === 'vilgax');
-  if (!boss && game.score >= game.nextVilgax) spawnVilgax();
-  if (now > game.nextSpawn && drones < Math.min(LEVEL.maxDrones, 1 + Math.floor(game.score / 5))) {
+  if (!boss && !game.between && game.score >= game.nextVilgax) spawnVilgax();
+  if (now > game.nextSpawn && drones < Math.min(LEVEL.maxDrones, 1 + Math.floor((game.score - game.levelStart) / 4))) {
     spawnDrone();
     game.nextSpawn = now + LEVEL.spawnMs;
   }
@@ -1444,7 +1490,7 @@ function drawStatus(now) {
   effects.filter(e => e.kind === 'banner').forEach(e => {
     ctx.save(); ctx.globalAlpha = 1 - (now - e.born) / e.life;
     ctx.fillStyle = '#ffffff'; ctx.strokeStyle = '#000'; ctx.lineWidth = 6; ctx.font = 'bold 48px system-ui'; ctx.textAlign = 'center';
-    ctx.strokeText(e.text, W / 2, H / 2 - 40); ctx.fillText(e.text, W / 2, H / 2 - 40);
+    ctx.strokeText(e.text, W / 2, H / 2 - 40, W - 40); ctx.fillText(e.text, W / 2, H / 2 - 40, W - 40);
     ctx.restore();
   });
   for (let i = 0; i < MAX_HP; i++) {
@@ -1459,7 +1505,10 @@ function drawStatus(now) {
   ctx.fillStyle = '#ffffff'; ctx.font = 'bold 16px system-ui'; ctx.textAlign = 'right';
   ctx.fillText(`Bad guys beaten: ${game.score}`, W - 14, 50);
   ctx.font = 'bold 12px system-ui';
-  ctx.fillText(`Easy level · ${Math.round(hero.x / (WORLD - 50) * 100)}% through Bellwood`, W - 14, 68);
+  const toBoss = Math.max(0, game.nextVilgax - game.score);
+  ctx.fillText(`Level ${game.level + 1} of ${LEVELS.length}: ${LEVEL.name}`, W - 14, 68);
+  ctx.fillText(enemies.some(e => e.type === 'vilgax') ? 'Beat VILGAX to finish the level!'
+    : game.between ? 'Get ready...' : `${toBoss} more bad guy${toBoss === 1 ? '' : 's'} until Vilgax comes`, W - 14, 84);
   ctx.textAlign = 'left';
   const boss = enemies.find(e => e.type === 'vilgax');
   if (boss) {
@@ -1715,8 +1764,21 @@ for (let x = 0, i = 0; x < WORLD * 0.5 + W; i++) {
 
 function drawSky() {
   const sky = ctx.createLinearGradient(0, 0, 0, BACK);
-  sky.addColorStop(0, '#1b2a4a'); sky.addColorStop(1, '#e98a5a');
+  sky.addColorStop(0, LEVEL.sky[0]); sky.addColorStop(1, LEVEL.sky[1]);
   ctx.fillStyle = sky; ctx.fillRect(-20, -20, W + 40, BACK + 20);
+}
+
+// The thunderstorm level has rain and lightning.
+function drawWeather(now) {
+  if (!LEVEL.rain) return;
+  ctx.strokeStyle = 'rgba(180,200,255,0.45)'; ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let i = 0; i < 90; i++) {
+    const x = (i * 97 + now * 0.25) % (W + 60) - 30, y = (i * 53 + now * 0.9) % H;
+    ctx.moveTo(x, y); ctx.lineTo(x - 6, y + 16);
+  }
+  ctx.stroke();
+  if (now % 7000 < 120) { ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillRect(0, 0, W, H); }
 }
 
 // Far buildings scroll slower than the street, so the city feels deep.
@@ -1807,6 +1869,7 @@ function draw() {
   drawEnemyShots();
   ctx.restore();
   ctx.restore();
+  drawWeather(now);
   drawStatus(now);
   if (menu.open) drawMenu(now);
 
@@ -1861,10 +1924,10 @@ function restartGame() {
   army.until = 0;
   shots.length = 0; effects.length = 0; bits.length = 0;
   rocks.forEach(r => r.back = 0);
-  resetGame();
+  effects.length = 0;
+  resetGame(0);
   hero.dial = 0; hero.face = 1; hero.vy = 0; hero.hurtUntil = 0;
   flash = 20;
-  banner('NEW GAME!');
 }
 
 function drawStopped() {
@@ -1876,6 +1939,8 @@ function drawStopped() {
   ctx.fillText('Press GO (or Esc) to keep playing', W / 2, H / 2 + 34);
   ctx.textAlign = 'left';
 }
+
+startLevel(0);
 
 (function loop() {
   if (!stopped) { update(); draw(); } else { draw(); drawStopped(); }
