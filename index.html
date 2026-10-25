@@ -1516,7 +1516,7 @@ function drawStatus(now) {
   ctx.font = 'bold 12px system-ui';
   const toBoss = Math.max(0, game.nextVilgax - game.score);
   ctx.fillText(`Level ${game.level + 1} of ${LEVELS.length}: ${LEVEL.name}`, W - 14, 68);
-  ctx.fillText(party.until ? 'You beat the whole game!' : enemies.some(e => e.type === 'vilgax') ? 'Beat VILGAX to finish the level!'
+  ctx.fillText(party.until ? (party.mode === 'win' ? 'You beat the whole game!' : 'Dance party! The bad guys are waiting...') : enemies.some(e => e.type === 'vilgax') ? 'Beat VILGAX to finish the level!'
     : game.between ? 'Get ready...' : `${toBoss} more bad guy${toBoss === 1 ? '' : 's'} until Vilgax comes`, W - 14, 84);
   ctx.textAlign = 'left';
   const boss = enemies.find(e => e.type === 'vilgax');
@@ -1789,11 +1789,10 @@ const DANCE_TUNE = [[C5, 1], [E5, 1], [G5, 1], [E5, 1], [C5, 1], [E5, 1], [G5, 2
 const PARTY_TUNE = [[G5, 1], [G5, 1], [G5, 1], [C6, 3], [0, 1], [A5, 1], [C6, 1], [A5, 1], [G5, 3], [0, 1],
   [E5, 1], [G5, 1], [C6, 2], [G5, 1], [C6, 4], [0, 2], [C5, 1], [E5, 1], [G5, 1], [C6, 1], [G5, 1], [E5, 1], [C5, 4]];
 
-// D / DANCE: the hero dances for a few seconds.
+// D / DANCE: a dance party! Every alien comes out to dance, with balloons and confetti.
 function dance() {
-  if (Date.now() < hero.danceUntil) return;
-  hero.danceUntil = Date.now() + 3200;
-  tune(DANCE_TUNE);
+  if (party.until) return;
+  startParty('dance');
 }
 
 // Bounce, wobble and turn around to the beat, around someone's feet at (x, GROUND).
@@ -1811,25 +1810,32 @@ function updateDance(now) {
 }
 
 // After level 5: fireworks, confetti, every alien dancing, then a brand-new game.
-const PARTY_MS = 10000;
-const party = { until: 0, born: 0, spots: [], fireworks: [], confetti: [] };
-function startParty() {
+// The same party happens when you press DANCE (bad guys freeze and wait) and when you win
+// the game (then a new game starts afterwards).
+const PARTY_MS = { dance: 7000, win: 10000 };
+const party = { until: 0, born: 0, mode: '', spots: [], fireworks: [], confetti: [], balloons: [] };
+const PARTY_COLORS = ['#39ff6a', '#ff4d5e', '#ffd23a', '#2a6cf0', '#a83cff', '#ff8a1f'];
+function startParty(mode = 'win') {
   const now = Date.now();
-  party.born = now; party.until = now + PARTY_MS;
+  party.mode = mode;
+  party.born = now; party.until = now + PARTY_MS[mode];
   party.spots = ALIENS.map((a, i) => ({ a, x: cam + 40 + i * (W - 80) / (ALIENS.length - 1), z: [10, 55, 95][i % 3] }));
   party.fireworks = []; party.confetti = [];
-  for (let i = 0; i < 120; i++) party.confetti.push({ x: Math.random() * W, y: -Math.random() * H, vy: 1 + Math.random() * 2, c: ['#39ff6a', '#ff4d5e', '#ffd23a', '#2a6cf0', '#a83cff'][i % 5], r: Math.random() * 6 });
-  enemies.length = 0; enemyShots.length = 0;
+  for (let i = 0; i < 120; i++) party.confetti.push({ x: Math.random() * W, y: -Math.random() * H, vy: 1 + Math.random() * 2, c: PARTY_COLORS[i % 6], r: Math.random() * 6 });
+  party.balloons = [];
+  for (let i = 0; i < 18; i++) party.balloons.push({ x: 20 + Math.random() * (W - 40), y: H + 40 + Math.random() * 300, vy: 0.8 + Math.random() * 0.9, c: PARTY_COLORS[i % 6], sway: Math.random() * 6 });
+  if (mode === 'win') { enemies.length = 0; enemyShots.length = 0; }
   hero.danceUntil = party.until;
-  tune(PARTY_TUNE, 0.18);
+  tune(mode === 'win' ? PARTY_TUNE : DANCE_TUNE.concat(DANCE_TUNE), 0.18);
 }
 
 function updateParty(now) {
   if (!party.until) return false;
-  if (now > party.until) { party.until = 0; restartGame(); return true; }
+  if (now > party.until) { party.until = 0; if (party.mode === 'win') restartGame(); return true; }
   if (Math.random() < 0.06) party.fireworks.push({ x: 60 + Math.random() * (W - 120), y: 60 + Math.random() * 140, born: now, c: ['#39ff6a', '#ff4d5e', '#ffd23a', '#9fd0ff', '#e0b0ff'][Math.floor(Math.random() * 5)] });
   party.fireworks = party.fireworks.filter(f => now - f.born < 1200);
   party.confetti.forEach(c => { c.y += c.vy; c.x += Math.sin((now / 300) + c.r) * 0.8; if (c.y > H) c.y = -10; });
+  party.balloons.forEach(b => { b.y -= b.vy; if (b.y < -60) b.y = H + 40; });
   game.nextSpawn = now + 1000;
   return true;
 }
@@ -1860,8 +1866,25 @@ function drawParty(now) {
     }
     ctx.restore();
   });
+  party.balloons.forEach(b => {
+    const bx = b.x + Math.sin(now / 600 + b.sway) * 10;
+    ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(bx, b.y + 24); ctx.quadraticCurveTo(bx + 6, b.y + 40, bx, b.y + 58); ctx.stroke();
+    ctx.fillStyle = b.c;
+    ctx.beginPath(); ctx.ellipse(bx, b.y, 17, 22, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(bx - 4, b.y + 25); ctx.lineTo(bx + 4, b.y + 25); ctx.lineTo(bx, b.y + 20); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+    ctx.beginPath(); ctx.ellipse(bx - 6, b.y - 8, 4, 7, -0.4, 0, Math.PI * 2); ctx.fill();
+  });
   party.confetti.forEach(c => { ctx.fillStyle = c.c; ctx.fillRect(c.x, c.y, 6, 9); });
   ctx.textAlign = 'center';
+  if (party.mode === 'dance') {
+    ctx.lineWidth = 7; ctx.strokeStyle = '#000';
+    ctx.font = 'bold 50px system-ui'; ctx.fillStyle = PARTY_COLORS[Math.floor(now / 250) % PARTY_COLORS.length];
+    ctx.strokeText('DANCE PARTY!', W / 2, 140); ctx.fillText('DANCE PARTY!', W / 2, 140);
+    ctx.textAlign = 'left';
+    return;
+  }
   ctx.lineWidth = 7; ctx.strokeStyle = '#000';
   ctx.font = 'bold 50px system-ui'; ctx.fillStyle = '#39ff6a';
   ctx.strokeText('YOU SAVED BELLWOOD!', W / 2, 140, W - 40); ctx.fillText('YOU SAVED BELLWOOD!', W / 2, 140, W - 40);
