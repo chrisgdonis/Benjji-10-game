@@ -157,15 +157,21 @@ function omni() {
 
 const ACTIONS = { watch: useWatch, dial, power: usePower, swap: swapPower, all: allAliens, mutate: toggleMutate, dance };
 // Keyboard: arrows move, Space jumps, Shift is the watch, Ctrl turns the dial,
-// Insert (the 0/Ins key) uses a power, 1 swaps powers and Enter calls ALL the aliens.
-// The old letter keys still work too.
+// 0/Ins uses a power, 1 swaps powers, 2 is STOP/GO, 4 is MUTATE, 5 is RESTART,
+// ./Del is DANCE and Enter calls ALL the aliens. The old letter keys still work too.
 const KEYMAP = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'back', ArrowDown: 'front', ' ': 'jump', j: 'jump', J: 'jump',
-  d: 'dance', D: 'dance', Shift: 'watch', Control: 'dial', m: 'mutate', M: 'mutate', '2': 'mutate', Insert: 'power', Numpad0: 'power', '0': 'power', '1': 'swap', Enter: 'all',
+  Shift: 'watch', Control: 'dial', Insert: 'power', '0': 'power', '1': 'swap', '2': 'stop', '4': 'mutate', '5': 'restart',
+  '.': 'dance', Delete: 'dance', Enter: 'all',
+  d: 'dance', D: 'dance', m: 'mutate', M: 'mutate', r: 'restart', R: 'restart',
   w: 'watch', W: 'watch', p: 'power', P: 'power', o: 'swap', O: 'swap', a: 'all', A: 'all' };
+// Number-pad keys work the same whether Num Lock is on or off.
+const NUMPAD = { Numpad0: 'power', Numpad1: 'swap', Numpad2: 'stop', Numpad4: 'mutate', Numpad5: 'restart', NumpadDecimal: 'dance', NumpadEnter: 'all' };
 addEventListener('keydown', e => {
-  const k = KEYMAP[e.key] || KEYMAP[e.code];
-  if (e.key === 'r' || e.key === 'R') { e.preventDefault(); return askRestart(); }
-  if (e.key === 'Escape' && (!menu.open || stopped) || e.key === 'Pause' || e.key === 'Backspace') { e.preventDefault(); return toggleStop(); }
+  const k = NUMPAD[e.code] || KEYMAP[e.key];
+  if (k === 'restart') { e.preventDefault(); if (!e.repeat) askRestart(); return; }
+  if (k === 'stop' || e.key === 'Escape' && (!menu.open || stopped) || e.key === 'Pause' || e.key === 'Backspace') {
+    e.preventDefault(); if (!e.repeat) toggleStop(); return;
+  }
   if (stopped) return;
   if (menu.open) {
     if (k || e.key === 'Escape') { e.preventDefault(); if (!e.repeat) menuKey(e, k); }
@@ -177,7 +183,7 @@ addEventListener('keydown', e => {
   if (k === 'jump') hero.wantJump = true; // so even a quick tap jumps
 });
 addEventListener('keyup', e => {
-  const k = KEYMAP[e.key] || KEYMAP[e.code];
+  const k = NUMPAD[e.code] || KEYMAP[e.key];
   if (k) keys[k] = false;
 });
 document.querySelectorAll('[data-key]').forEach(b => {
@@ -2084,7 +2090,7 @@ function drawStopped() {
   ctx.fillStyle = '#ffffff'; ctx.font = 'bold 56px system-ui';
   ctx.fillText('STOPPED', W / 2, H / 2);
   ctx.font = 'bold 16px system-ui';
-  ctx.fillText('Press GO (or Esc) to keep playing', W / 2, H / 2 + 34);
+  ctx.fillText('Press GO (or 2) to keep playing', W / 2, H / 2 + 34);
   ctx.textAlign = 'left';
 }
 
