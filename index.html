@@ -12,6 +12,8 @@
     border-radius: 14px; border: 2px solid #ffffff; background: #d6303099; color: #fff; font-weight: 700; font-size: 12px; }
   #restartBtn { position: absolute; top: 58px; left: 92px; padding: 4px 12px;
     border-radius: 14px; border: 2px solid #ffffff; background: #2a6cf099; color: #fff; font-weight: 700; font-size: 12px; }
+  #danceBtn { position: absolute; top: 58px; left: 208px; padding: 4px 12px; width: auto; height: auto;
+    border-radius: 14px; border: 2px solid #ffffff; background: #e8486a99; color: #fff; font-weight: 700; font-size: 12px; }
   #restartBtn.sure { background: #ffd23a; color: #000; }
   #stopBtn.paused { background: #39ff6acc; color: #000; }
   #hud { position: absolute; top: 8px; left: 0; right: 0; text-align: center;
@@ -35,6 +37,7 @@
 <div id="hud">Benjji · Shift to pick an alien</div>
 <button id="stopBtn">⏸ STOP</button>
 <button id="restartBtn">↻ RESTART</button>
+<button id="danceBtn" data-key="dance">♪ DANCE</button>
 <div class="pad" id="left">
   <div class="dpad">
     <button data-key="back" class="up">▲</button>
@@ -119,7 +122,7 @@ const HERO_MS = 10 * 60 * 1000;
 const RECHARGE_MS = 5 * 1000;
 
 const hero = { x: 120, y: GROUND, z: 40, vy: 0, face: 1, alien: null, until: 0, recharge: 0, dial: 0, walk: 0,
-  cool: 0, dash: 0, dashV: 0, rolling: 0, ghost: 0, hurtUntil: 0, pw: 0, ammo: 0, slam: 0, chompOnLand: 0, merged: null };
+  cool: 0, dash: 0, dashV: 0, rolling: 0, ghost: 0, hurtUntil: 0, danceUntil: 0, pw: 0, ammo: 0, slam: 0, chompOnLand: 0, merged: null };
 const keys = {};
 
 // W / WATCH: press once to see all the aliens and pick one, press again to go hero.
@@ -152,12 +155,12 @@ function omni() {
   return '#39ff6a';
 }
 
-const ACTIONS = { watch: useWatch, dial, power: usePower, swap: swapPower, all: allAliens, mutate: toggleMutate };
+const ACTIONS = { watch: useWatch, dial, power: usePower, swap: swapPower, all: allAliens, mutate: toggleMutate, dance };
 // Keyboard: arrows move, Space jumps, Shift is the watch, Ctrl turns the dial,
 // Insert (the 0/Ins key) uses a power, 1 swaps powers and Enter calls ALL the aliens.
 // The old letter keys still work too.
 const KEYMAP = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'back', ArrowDown: 'front', ' ': 'jump', j: 'jump', J: 'jump',
-  Shift: 'watch', Control: 'dial', m: 'mutate', M: 'mutate', '2': 'mutate', Insert: 'power', Numpad0: 'power', '0': 'power', '1': 'swap', Enter: 'all',
+  d: 'dance', D: 'dance', Shift: 'watch', Control: 'dial', m: 'mutate', M: 'mutate', '2': 'mutate', Insert: 'power', Numpad0: 'power', '0': 'power', '1': 'swap', Enter: 'all',
   w: 'watch', W: 'watch', p: 'power', P: 'power', o: 'swap', O: 'swap', a: 'all', A: 'all' };
 addEventListener('keydown', e => {
   const k = KEYMAP[e.key] || KEYMAP[e.code];
@@ -968,6 +971,10 @@ function drawPowers(now) {
     } else if (e.kind === 'punch') {
       ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 4;
       for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(e.x, e.y); ctx.lineTo(e.x + e.f * (20 + 30 * t), e.y - 30 + i * 20); ctx.stroke(); }
+    } else if (e.kind === 'note') {
+      ctx.fillStyle = ['#39ff6a', '#ffd23a', '#ff4d5e', '#9fd0ff'][Math.floor(e.born) % 4];
+      ctx.font = 'bold 30px system-ui'; ctx.textAlign = 'center';
+      ctx.fillText(Math.floor(e.born) % 2 ? '♪' : '♫', e.x + Math.sin(t * 6) * 8, e.y - t * 50);
     } else if (e.kind === 'say') {
       ctx.fillStyle = '#ffffff'; ctx.font = 'bold 22px system-ui'; ctx.textAlign = 'center';
       ctx.fillText(e.text, Math.max(cam + 200, Math.min(cam + W - 200, hero.x)), hero.y - 250);
@@ -1237,10 +1244,10 @@ function startLevel(i) {
 }
 
 function levelComplete() {
-  const last = game.level === LEVELS.length - 1;
-  banner(last ? 'YOU SAVED BELLWOOD!' : `LEVEL ${game.level + 1} COMPLETE!`);
-  game.between = Date.now() + 3500; // a short break before the next level
   enemyShots.length = 0;
+  if (game.level === LEVELS.length - 1) return startParty(); // the whole game is beaten!
+  banner(`LEVEL ${game.level + 1} COMPLETE!`);
+  game.between = Date.now() + 3500; // a short break before the next level
 }
 const pickups = [];
 hero.hp = MAX_HP;
@@ -1271,7 +1278,7 @@ function heroBox() {
 
 function hurtHero(dmg, fromX) {
   const now = Date.now();
-  if (now < army.until) return; // the whole alien army has your back
+  if (now < army.until || party.until) return; // the whole alien army has your back
   if (now < hero.hurtUntil || now < game.over) return;
   if (hero.alien && (now < hero.ghost || now < hero.rolling)) return; // invisible or rolled up in armour
   hero.hp -= dmg;
@@ -1327,6 +1334,8 @@ function resetGame(level = game.level) {
 }
 
 function updateEnemies(now) {
+  updateDance(now);
+  if (updateParty(now)) return; // no bad guys during the celebration
   if (game.over) { if (now > game.over) resetGame(); return; }
   if (game.between) {
     if (now > game.between) startLevel(game.level === LEVELS.length - 1 ? game.level : game.level + 1);
@@ -1507,7 +1516,7 @@ function drawStatus(now) {
   ctx.font = 'bold 12px system-ui';
   const toBoss = Math.max(0, game.nextVilgax - game.score);
   ctx.fillText(`Level ${game.level + 1} of ${LEVELS.length}: ${LEVEL.name}`, W - 14, 68);
-  ctx.fillText(enemies.some(e => e.type === 'vilgax') ? 'Beat VILGAX to finish the level!'
+  ctx.fillText(party.until ? 'You beat the whole game!' : enemies.some(e => e.type === 'vilgax') ? 'Beat VILGAX to finish the level!'
     : game.between ? 'Get ready...' : `${toBoss} more bad guy${toBoss === 1 ? '' : 's'} until Vilgax comes`, W - 14, 84);
   ctx.textAlign = 'left';
   const boss = enemies.find(e => e.type === 'vilgax');
@@ -1751,6 +1760,118 @@ function armyItems(now, items) {
   }) }));
 }
 
+// ---- DANCE, music, and the big celebration after level 5 ----
+let audio = null;
+function ensureAudio() {
+  if (!audio) { try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (err) { audio = null; } }
+  if (audio && audio.state === 'suspended') audio.resume();
+}
+addEventListener('pointerdown', ensureAudio);
+addEventListener('keydown', ensureAudio);
+
+// Play a little tune: each note is [frequency, beats].
+function tune(notes, beat = 0.16) {
+  if (!audio) return;
+  let t = audio.currentTime + 0.02;
+  notes.forEach(([f, len]) => {
+    if (f) {
+      const osc = audio.createOscillator(), gain = audio.createGain();
+      osc.type = 'square'; osc.frequency.value = f;
+      gain.gain.setValueAtTime(0.06, t); gain.gain.exponentialRampToValueAtTime(0.001, t + beat * len * 0.95);
+      osc.connect(gain); gain.connect(audio.destination);
+      osc.start(t); osc.stop(t + beat * len);
+    }
+    t += beat * len;
+  });
+}
+const C5 = 523, D5 = 587, E5 = 659, F5 = 698, G5 = 784, A5 = 880, C6 = 1047;
+const DANCE_TUNE = [[C5, 1], [E5, 1], [G5, 1], [E5, 1], [C5, 1], [E5, 1], [G5, 2], [A5, 1], [G5, 1], [E5, 1], [C5, 1], [D5, 2], [C5, 2]];
+const PARTY_TUNE = [[G5, 1], [G5, 1], [G5, 1], [C6, 3], [0, 1], [A5, 1], [C6, 1], [A5, 1], [G5, 3], [0, 1],
+  [E5, 1], [G5, 1], [C6, 2], [G5, 1], [C6, 4], [0, 2], [C5, 1], [E5, 1], [G5, 1], [C6, 1], [G5, 1], [E5, 1], [C5, 4]];
+
+// D / DANCE: the hero dances for a few seconds.
+function dance() {
+  if (Date.now() < hero.danceUntil) return;
+  hero.danceUntil = Date.now() + 3200;
+  tune(DANCE_TUNE);
+}
+
+// Bounce, wobble and turn around to the beat, around someone's feet at (x, GROUND).
+function danceMove(x, now, seed) {
+  const t = now / 1000 * 6 + seed;
+  ctx.translate(x, GROUND - Math.abs(Math.sin(t)) * 16);
+  ctx.rotate(Math.sin(t / 2) * 0.22);
+  ctx.scale(Math.floor(t / Math.PI) % 2 ? -1 : 1, 1);
+  ctx.translate(-x, -GROUND);
+}
+
+function updateDance(now) {
+  if (now < hero.danceUntil && Math.random() < 0.08)
+    effects.push({ kind: 'note', x: hero.x + (Math.random() - 0.5) * 80, y: hero.y - 160 - Math.random() * 60, z: hero.z, born: now, life: 1200 });
+}
+
+// After level 5: fireworks, confetti, every alien dancing, then a brand-new game.
+const PARTY_MS = 10000;
+const party = { until: 0, born: 0, spots: [], fireworks: [], confetti: [] };
+function startParty() {
+  const now = Date.now();
+  party.born = now; party.until = now + PARTY_MS;
+  party.spots = ALIENS.map((a, i) => ({ a, x: cam + 40 + i * (W - 80) / (ALIENS.length - 1), z: [10, 55, 95][i % 3] }));
+  party.fireworks = []; party.confetti = [];
+  for (let i = 0; i < 120; i++) party.confetti.push({ x: Math.random() * W, y: -Math.random() * H, vy: 1 + Math.random() * 2, c: ['#39ff6a', '#ff4d5e', '#ffd23a', '#2a6cf0', '#a83cff'][i % 5], r: Math.random() * 6 });
+  enemies.length = 0; enemyShots.length = 0;
+  hero.danceUntil = party.until;
+  tune(PARTY_TUNE, 0.18);
+}
+
+function updateParty(now) {
+  if (!party.until) return false;
+  if (now > party.until) { party.until = 0; restartGame(); return true; }
+  if (Math.random() < 0.06) party.fireworks.push({ x: 60 + Math.random() * (W - 120), y: 60 + Math.random() * 140, born: now, c: ['#39ff6a', '#ff4d5e', '#ffd23a', '#9fd0ff', '#e0b0ff'][Math.floor(Math.random() * 5)] });
+  party.fireworks = party.fireworks.filter(f => now - f.born < 1200);
+  party.confetti.forEach(c => { c.y += c.vy; c.x += Math.sin((now / 300) + c.r) * 0.8; if (c.y > H) c.y = -10; });
+  game.nextSpawn = now + 1000;
+  return true;
+}
+
+function partyItems(now, items) {
+  if (!party.until) return;
+  const t = now / 120;
+  party.spots.forEach((spot, i) => items.push({ z: spot.z, draw: () => atDepth(spot.x, spot.z, () => {
+    shadow(spot.x, 22 * spot.a.size);
+    ctx.save();
+    danceMove(spot.x, now, i * 1.3);
+    ctx.translate(spot.x, GROUND);
+    const k = 0.6 * spot.a.size * SCALE;
+    ctx.scale(k, k);
+    spot.a.draw(Math.sin(t + i) * 6, t);
+    ctx.restore();
+  }) }));
+}
+
+function drawParty(now) {
+  if (!party.until) return;
+  party.fireworks.forEach(f => {
+    const t = (now - f.born) / 1200;
+    ctx.save(); ctx.globalAlpha = 1 - t; ctx.fillStyle = f.c;
+    for (let i = 0; i < 16; i++) {
+      const a = i * Math.PI / 8, d = 10 + t * 70;
+      ctx.beginPath(); ctx.arc(f.x + Math.cos(a) * d, f.y + Math.sin(a) * d + t * t * 30, 3, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  });
+  party.confetti.forEach(c => { ctx.fillStyle = c.c; ctx.fillRect(c.x, c.y, 6, 9); });
+  ctx.textAlign = 'center';
+  ctx.lineWidth = 7; ctx.strokeStyle = '#000';
+  ctx.font = 'bold 50px system-ui'; ctx.fillStyle = '#39ff6a';
+  ctx.strokeText('YOU SAVED BELLWOOD!', W / 2, 140, W - 40); ctx.fillText('YOU SAVED BELLWOOD!', W / 2, 140, W - 40);
+  ctx.font = 'bold 22px system-ui'; ctx.fillStyle = '#ffffff'; ctx.lineWidth = 5;
+  const left = Math.ceil((party.until - now) / 1000);
+  const line = `Benjji and all the aliens are celebrating! New game in ${left}...`;
+  ctx.strokeText(line, W / 2, 175, W - 40); ctx.fillText(line, W / 2, 175, W - 40);
+  ctx.textAlign = 'left';
+}
+
 // ---- Bellwood: the city where it all happens. It's much wider than the screen,
 // and the camera follows the hero as they walk through it. ----
 const BACK = GROUND + floorShift(DEPTH); // where the street meets the sidewalk
@@ -1854,9 +1975,11 @@ function draw() {
   pickupItems(now, items);
   enemyItems(now, items);
   armyItems(now, items);
+  partyItems(now, items);
   items.push({ z: hero.z, draw: () => atDepth(hero.x, hero.z, () => {
     shadow(hero.x, hero.merged ? hero.merged.w * 0.6 : 26 * (hero.alien ? hero.alien.size : 1));
     if (now < hero.hurtUntil && Math.floor(now / 100) % 2) ctx.globalAlpha = 0.4; // blink when hit
+    if (now < hero.danceUntil) danceMove(hero.x, now, 0);
     if (hero.alien) {
       ctx.save();
       if (now < hero.ghost) ctx.globalAlpha = 0.25;
@@ -1871,6 +1994,7 @@ function draw() {
   ctx.restore();
   drawWeather(now);
   drawStatus(now);
+  drawParty(now);
   if (menu.open) drawMenu(now);
 
   if (flash) {
@@ -1890,12 +2014,13 @@ function toggleStop() {
   else {
     // move every timer forward, so nothing ran out while the game was stopped
     const d = Date.now() - stoppedAt;
-    ['until', 'recharge', 'cool', 'dash', 'rolling', 'ghost', 'hurtUntil', 'slam', 'chompOnLand'].forEach(k => { if (hero[k]) hero[k] += d; });
+    ['until', 'recharge', 'cool', 'dash', 'rolling', 'ghost', 'hurtUntil', 'slam', 'chompOnLand', 'danceUntil'].forEach(k => { if (hero[k]) hero[k] += d; });
     enemies.forEach(e => { e.cool += d; e.hurt += d; });
     effects.forEach(e => e.born += d);
     rocks.forEach(r => { if (r.back && r.back !== Infinity) r.back += d; });
     ['nextSpawn', 'over'].forEach(k => { if (game[k]) game[k] += d; });
     if (army.until) { army.until += d; army.born += d; }
+    if (party.until) { party.until += d; party.born += d; }
   }
   stopBtn.textContent = stopped ? '▶ GO' : '⏸ STOP';
   stopBtn.classList.toggle('paused', stopped);
@@ -1921,7 +2046,7 @@ function restartGame() {
   resetRestartBtn();
   if (stopped) toggleStop();
   closeMenu();
-  army.until = 0;
+  army.until = 0; party.until = 0; hero.danceUntil = 0;
   shots.length = 0; effects.length = 0; bits.length = 0;
   rocks.forEach(r => r.back = 0);
   effects.length = 0;
