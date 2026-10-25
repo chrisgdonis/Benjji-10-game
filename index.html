@@ -38,7 +38,6 @@
 </div>
 <div class="pad" id="right">
   <button data-key="jump" style="font-size:9px">JUMP</button>
-  <button data-key="dial">Y</button>
   <button data-key="swap" style="font-size:9px">SWAP</button>
   <button id="mutateBtn" data-key="mutate">MUTATE</button>
   <button id="powerBtn" data-key="power">POWER</button>
@@ -123,7 +122,7 @@ function useWatch() {
   if (!menu.open) openMenu(); else chooseAlien();
 }
 
-// Y: turn the dial to pick an alien, or change back if already an alien.
+// Ctrl: turn the dial to pick an alien, or change back if already an alien.
 function dial() {
   if (hero.alien) return changeBack(false);
   hero.dial = (hero.dial + 1) % ALIENS.length;
@@ -151,7 +150,7 @@ const ACTIONS = { watch: useWatch, dial, power: usePower, swap: swapPower, all: 
 // The old letter keys still work too.
 const KEYMAP = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'back', ArrowDown: 'front', ' ': 'jump', j: 'jump', J: 'jump',
   Shift: 'watch', Control: 'dial', m: 'mutate', M: 'mutate', '2': 'mutate', Insert: 'power', Numpad0: 'power', '0': 'power', '1': 'swap', Enter: 'all',
-  w: 'watch', W: 'watch', y: 'dial', Y: 'dial', p: 'power', P: 'power', o: 'swap', O: 'swap', a: 'all', A: 'all' };
+  w: 'watch', W: 'watch', p: 'power', P: 'power', o: 'swap', O: 'swap', a: 'all', A: 'all' };
 addEventListener('keydown', e => {
   const k = KEYMAP[e.key] || KEYMAP[e.code];
   if (menu.open) {
