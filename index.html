@@ -40,7 +40,7 @@
 <button id="danceBtn" data-key="dance">♪ DANCE</button>
 <div class="pad" id="left">
   <div class="dpad">
-    <button data-key="back" class="up">▲</button>
+    <button data-key="up" class="up">▲</button>
     <button data-key="left" class="lt">◀</button>
     <button data-key="right" class="rt">▶</button>
     <button data-key="front" class="dn">▼</button>
@@ -159,7 +159,7 @@ const ACTIONS = { watch: useWatch, dial, power: usePower, swap: swapPower, all: 
 // Keyboard: arrows move, Space jumps, Shift is the watch, Ctrl turns the dial,
 // 0/Ins uses a power, 1 swaps powers, 2 is STOP/GO, 4 is MUTATE, 5 is RESTART,
 // ./Del is DANCE and Enter calls ALL the aliens. The old letter keys still work too.
-const KEYMAP = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'back', ArrowDown: 'front', ' ': 'jump', j: 'jump', J: 'jump',
+const KEYMAP = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'front', ' ': 'jump', j: 'jump', J: 'jump',
   Shift: 'watch', Control: 'dial', Insert: 'power', '0': 'power', '1': 'swap', '2': 'stop', '4': 'mutate', '5': 'restart',
   '.': 'dance', Delete: 'dance', Enter: 'all',
   d: 'dance', D: 'dance', m: 'mutate', M: 'mutate', r: 'restart', R: 'restart',
@@ -179,23 +179,37 @@ addEventListener('keydown', e => {
   }
   if (!k) return;
   e.preventDefault();
+  if (k === 'up') { if (!e.repeat) upPress(); return; }
   if (ACTIONS[k]) { if (!e.repeat) ACTIONS[k](); } else keys[k] = true;
   if (k === 'jump') hero.wantJump = true; // so even a quick tap jumps
 });
 addEventListener('keyup', e => {
   const k = NUMPAD[e.code] || KEYMAP[e.key];
-  if (k) keys[k] = false;
+  if (k === 'up') upRelease();
+  else if (k) keys[k] = false;
 });
+
+// The up button: press once to jump (hold to fly), press twice quickly (and hold) to walk up the street.
+let upLast = 0, upTimer = 0, upHeld = false;
+function upPress() {
+  const now = Date.now();
+  upHeld = true;
+  if (now - upLast < 260) { clearTimeout(upTimer); upLast = 0; keys.back = true; return; }
+  upLast = now;
+  upTimer = setTimeout(() => { hero.wantJump = true; if (upHeld) keys.jump = true; }, 220);
+}
+function upRelease() { upHeld = false; keys.back = false; keys.jump = false; }
 document.querySelectorAll('[data-key]').forEach(b => {
   const k = b.dataset.key;
   b.addEventListener('pointerdown', e => {
     e.preventDefault();
     if (stopped) return;
     if (menu.open) { menuKey(e, k); return; }
+    if (k === 'up') return upPress();
     if (ACTIONS[k]) ACTIONS[k](); else keys[k] = true;
     if (k === 'jump') hero.wantJump = true;
   });
-  ['pointerup', 'pointerleave', 'pointercancel'].forEach(t => b.addEventListener(t, () => keys[k] = false));
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach(t => b.addEventListener(t, () => { if (k === 'up') upRelease(); else keys[k] = false; }));
 });
 
 let flash = 0;
