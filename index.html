@@ -8,6 +8,9 @@
   html, body { margin: 0; height: 100%; background: #0b1a10; color: #eaffea;
     font-family: system-ui, sans-serif; overflow: hidden; touch-action: none; }
   #game { display: block; margin: 0 auto; background: #1d3b52; max-width: 100%; }
+  #stopBtn { position: absolute; top: 58px; left: 10px; padding: 4px 12px;
+    border-radius: 14px; border: 2px solid #ffffff; background: #d6303099; color: #fff; font-weight: 700; font-size: 12px; }
+  #stopBtn.paused { background: #39ff6acc; color: #000; }
   #hud { position: absolute; top: 8px; left: 0; right: 0; text-align: center;
     font-weight: 700; text-shadow: 0 2px 0 #000; pointer-events: none; }
   .pad { position: absolute; bottom: 10px; display: flex; gap: 6px; align-items: center; opacity: 0.8; }
@@ -26,7 +29,8 @@
 </head>
 <body>
 <canvas id="game" width="800" height="450"></canvas>
-<div id="hud">Benjji · Y to pick an alien, W to go hero</div>
+<div id="hud">Benjji · Shift to pick an alien</div>
+<button id="stopBtn">⏸ STOP</button>
 <div class="pad" id="left">
   <div class="dpad">
     <button data-key="back" class="up">▲</button>
@@ -153,6 +157,8 @@ const KEYMAP = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'back', ArrowD
   w: 'watch', W: 'watch', p: 'power', P: 'power', o: 'swap', O: 'swap', a: 'all', A: 'all' };
 addEventListener('keydown', e => {
   const k = KEYMAP[e.key] || KEYMAP[e.code];
+  if (e.key === 'Escape' && (!menu.open || stopped) || e.key === 'Pause' || e.key === 'Backspace') { e.preventDefault(); return toggleStop(); }
+  if (stopped) return;
   if (menu.open) {
     if (k || e.key === 'Escape') { e.preventDefault(); if (!e.repeat) menuKey(e, k); }
     return;
@@ -170,6 +176,7 @@ document.querySelectorAll('[data-key]').forEach(b => {
   const k = b.dataset.key;
   b.addEventListener('pointerdown', e => {
     e.preventDefault();
+    if (stopped) return;
     if (menu.open) { menuKey(e, k); return; }
     if (ACTIONS[k]) ACTIONS[k](); else keys[k] = true;
     if (k === 'jump') hero.wantJump = true;
@@ -1804,7 +1811,42 @@ function draw() {
   }
 }
 
-(function loop() { update(); draw(); requestAnimationFrame(loop); })();
+// ---- STOP: pause the game, and press again to keep playing ----
+let stopped = false, stoppedAt = 0;
+const stopBtn = document.getElementById('stopBtn');
+stopBtn.addEventListener('pointerdown', e => { e.preventDefault(); toggleStop(); });
+function toggleStop() {
+  stopped = !stopped;
+  Object.keys(keys).forEach(k => keys[k] = false);
+  if (stopped) stoppedAt = Date.now();
+  else {
+    // move every timer forward, so nothing ran out while the game was stopped
+    const d = Date.now() - stoppedAt;
+    ['until', 'recharge', 'cool', 'dash', 'rolling', 'ghost', 'hurtUntil', 'slam', 'chompOnLand'].forEach(k => { if (hero[k]) hero[k] += d; });
+    enemies.forEach(e => { e.cool += d; e.hurt += d; });
+    effects.forEach(e => e.born += d);
+    rocks.forEach(r => { if (r.back && r.back !== Infinity) r.back += d; });
+    ['nextSpawn', 'over'].forEach(k => { if (game[k]) game[k] += d; });
+    if (army.until) { army.until += d; army.born += d; }
+  }
+  stopBtn.textContent = stopped ? '▶ GO' : '⏸ STOP';
+  stopBtn.classList.toggle('paused', stopped);
+}
+
+function drawStopped() {
+  ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#ffffff'; ctx.font = 'bold 56px system-ui';
+  ctx.fillText('STOPPED', W / 2, H / 2);
+  ctx.font = 'bold 16px system-ui';
+  ctx.fillText('Press GO (or Esc) to keep playing', W / 2, H / 2 + 34);
+  ctx.textAlign = 'left';
+}
+
+(function loop() {
+  if (!stopped) { update(); draw(); } else { draw(); drawStopped(); }
+  requestAnimationFrame(loop);
+})();
 </script>
 </body>
 </html>
