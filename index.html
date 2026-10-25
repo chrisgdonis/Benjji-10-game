@@ -1550,25 +1550,43 @@ function drawStatus(now) {
 }
 
 // ---- The alien picker: like the real watch, the aliens pop up as green holograms ----
-const menu = { open: false, pos: 0, mutate: false, mix: [] };
+// Step 1 picks the alien (or mutant); step 2 picks which of its powers to start with.
+const menu = { open: false, pos: 0, mutate: false, mix: [], step: 'alien', choice: null, pw: 0, rows: [] };
 const holo = document.createElement('canvas');
 holo.width = 300; holo.height = 360;
 const holoCtx = holo.getContext('2d');
 
-function openMenu() { menu.open = true; menu.mutate = false; menu.mix = []; menu.pos = hero.dial; keys.left = keys.right = false; }
+function openMenu() { menu.open = true; menu.step = 'alien'; menu.mutate = false; menu.mix = []; menu.pos = hero.dial; keys.left = keys.right = false; }
 function closeMenu() { menu.open = false; }
 function turnDial(step) { hero.dial = (hero.dial + step + ALIENS.length) % ALIENS.length; }
 function chooseAlien() {
   const members = menu.mutate && menu.mix.length ? menu.mix.map(i => ALIENS[i]) : [ALIENS[hero.dial]];
+  menu.choice = makeMutant(members);
+  menu.step = 'power';
+  menu.pw = 0;
+}
+function turnPower(step) {
+  const n = menu.choice.powers.length;
+  menu.pw = (menu.pw + step + n) % n;
+}
+// Go hero, starting with the power that was picked.
+function choosePower() {
   closeMenu();
-  hero.alien = makeMutant(members);
-  hero.pw = 0;
+  hero.alien = menu.choice;
+  hero.pw = menu.pw;
   hero.until = Date.now() + HERO_MS;
   flash = 20;
 }
 
 // Keys while the picker is open: left/right turn the dial, the watch keys pick, Escape closes.
 function menuKey(e, k) {
+  if (menu.step === 'power') {
+    if (e.key === 'Escape') menu.step = 'alien'; // back to the aliens
+    else if (k === 'up' || k === 'right' || k === 'swap') turnPower(1);
+    else if (k === 'front' || k === 'left') turnPower(-1);
+    else if (k === 'watch' || k === 'power' || k === 'all' || k === 'jump') choosePower();
+    return;
+  }
   if (e.key === 'Escape') return closeMenu();
   if (k === 'left') turnDial(-1);
   else if (k === 'right' || k === 'dial') turnDial(1);
@@ -1579,10 +1597,18 @@ function menuKey(e, k) {
 }
 
 // Tap an alien to turn the dial to it; tap the one in the middle to pick it.
+// In step 2, a left click (or a tap) picks the highlighted power, or the power you click on.
 canvas.addEventListener('pointerdown', e => {
   if (!menu.open) return;
   const rect = canvas.getBoundingClientRect();
   const x = (e.clientX - rect.left) * W / rect.width;
+  if (menu.step === 'power') {
+    if (e.button !== 0) return;
+    const y = (e.clientY - rect.top) * H / rect.height;
+    const row = menu.rows.find(r => x > r.x && y > r.y0 && y < r.y1);
+    if (row) menu.pw = row.i;
+    return choosePower();
+  }
   const off = Math.round((x - W / 2) / MENU_GAP);
   if (off !== 0) turnDial(off);
   else if (menu.mutate) toggleMix(hero.dial);
@@ -1595,7 +1621,9 @@ function updateMenu() {
   let d = hero.dial - menu.pos;
   d = ((d % n) + n * 1.5) % n - n / 2; // the short way around the dial
   menu.pos = (menu.pos + d * 0.25 + n) % n;
-  hud.textContent = menu.mutate
+  hud.textContent = menu.step === 'power'
+    ? `Pick a power! ↑ next power · ↓ back · Left-click (or tap) to choose · Esc: other alien`
+    : menu.mutate
     ? `MUTATE: POWER (Ins) adds an alien · ALL (Enter) adds all · WATCH (Shift) to go mutant`
     : `Pick your alien! ◀ ▶ turn · WATCH (Shift) go hero · MUTATE (M) to blend aliens`;
 }
@@ -1615,6 +1643,7 @@ function drawHologram(a, x, y, s, tint, t, purple) {
 function drawMenu(now) {
   const n = ALIENS.length, t = now / 120, cx = W / 2, cy = H / 2 + 60;
   ctx.fillStyle = 'rgba(5,15,8,0.9)'; ctx.fillRect(0, 0, W, H);
+  if (menu.step === 'power') return drawPowerMenu(now);
   // the watch dial behind the holograms
   ctx.strokeStyle = '#2b2b2b'; ctx.lineWidth = 26;
   ctx.beginPath(); ctx.arc(cx, cy - 40, 150, 0, Math.PI * 2); ctx.stroke();
@@ -1661,6 +1690,35 @@ function drawMenu(now) {
       ctx.fillText(makeMutant(mix).name, W - 80, 66, 130);
     }
   }
+  ctx.textAlign = 'left';
+}
+
+// Step 2: the chosen alien on the left, its powers in a list on the right.
+function drawPowerMenu(now) {
+  const t = now / 120, a = menu.choice, list = a.powers, n = list.length;
+  drawHologram(a, 190, 425, 0.82, 0.15, t, !!a.mutant);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = a.mutant ? '#e0b0ff' : '#39ff6a'; ctx.font = 'bold 28px system-ui';
+  ctx.fillText(a.name, 190, 118, 340);
+  // up to 8 powers at a time, scrolling to keep the picked one in view
+  const show = Math.min(8, n), first = Math.max(0, Math.min(n - show, menu.pw - 3));
+  const x0 = 380, rowH = 38, top = 70;
+  ctx.font = 'bold 15px system-ui'; ctx.fillStyle = '#bfffcf';
+  ctx.fillText(`Pick a power (${menu.pw + 1} of ${n})`, 580, top - 12);
+  menu.rows = [];
+  for (let r = 0; r < show; r++) {
+    const i = first + r, y = top + r * rowH, picked = i === menu.pw;
+    ctx.fillStyle = picked ? '#39ff6a' : 'rgba(57,255,106,0.12)';
+    ctx.beginPath(); ctx.roundRect(x0, y, 400, rowH - 6, 10); ctx.fill();
+    ctx.strokeStyle = '#39ff6a'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = picked ? '#000' : '#eaffea'; ctx.font = `bold ${picked ? 17 : 15}px system-ui`;
+    ctx.fillText(`${picked ? '▶ ' : ''}${list[i][0]}`, x0 + 200, y + 22, 380);
+    menu.rows.push({ i, x: x0, y0: y, y1: y + rowH - 6 });
+  }
+  if (first > 0) { ctx.fillStyle = '#39ff6a'; ctx.fillText('▲ more', 580, top - 28 + 6); }
+  if (first + show < n) { ctx.fillStyle = '#39ff6a'; ctx.font = 'bold 13px system-ui'; ctx.fillText('▼ more', 580, top + show * rowH + 10); }
+  ctx.fillStyle = '#ffffff'; ctx.font = 'bold 15px system-ui';
+  ctx.fillText('↑ next power  ·  Left-click or tap to choose  ·  Esc for another alien', W / 2, H - 16, W - 30);
   ctx.textAlign = 'left';
 }
 
