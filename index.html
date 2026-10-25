@@ -10,6 +10,9 @@
   #game { display: block; margin: 0 auto; background: #1d3b52; max-width: 100%; }
   #stopBtn { position: absolute; top: 58px; left: 10px; padding: 4px 12px;
     border-radius: 14px; border: 2px solid #ffffff; background: #d6303099; color: #fff; font-weight: 700; font-size: 12px; }
+  #restartBtn { position: absolute; top: 58px; left: 92px; padding: 4px 12px;
+    border-radius: 14px; border: 2px solid #ffffff; background: #2a6cf099; color: #fff; font-weight: 700; font-size: 12px; }
+  #restartBtn.sure { background: #ffd23a; color: #000; }
   #stopBtn.paused { background: #39ff6acc; color: #000; }
   #hud { position: absolute; top: 8px; left: 0; right: 0; text-align: center;
     font-weight: 700; text-shadow: 0 2px 0 #000; pointer-events: none; }
@@ -31,6 +34,7 @@
 <canvas id="game" width="800" height="450"></canvas>
 <div id="hud">Benjji · Shift to pick an alien</div>
 <button id="stopBtn">⏸ STOP</button>
+<button id="restartBtn">↻ RESTART</button>
 <div class="pad" id="left">
   <div class="dpad">
     <button data-key="back" class="up">▲</button>
@@ -157,6 +161,7 @@ const KEYMAP = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'back', ArrowD
   w: 'watch', W: 'watch', p: 'power', P: 'power', o: 'swap', O: 'swap', a: 'all', A: 'all' };
 addEventListener('keydown', e => {
   const k = KEYMAP[e.key] || KEYMAP[e.code];
+  if (e.key === 'r' || e.key === 'R') { e.preventDefault(); return askRestart(); }
   if (e.key === 'Escape' && (!menu.open || stopped) || e.key === 'Pause' || e.key === 'Backspace') { e.preventDefault(); return toggleStop(); }
   if (stopped) return;
   if (menu.open) {
@@ -1831,6 +1836,35 @@ function toggleStop() {
   }
   stopBtn.textContent = stopped ? '▶ GO' : '⏸ STOP';
   stopBtn.classList.toggle('paused', stopped);
+}
+
+// ---- RESTART: press twice (so it can't happen by accident) to start the game again ----
+const restartBtn = document.getElementById('restartBtn');
+let restartAsk = 0;
+restartBtn.addEventListener('pointerdown', e => { e.preventDefault(); askRestart(); });
+function askRestart() {
+  if (Date.now() < restartAsk) return restartGame();
+  restartAsk = Date.now() + 2500;
+  restartBtn.textContent = 'Sure? Tap again';
+  restartBtn.classList.add('sure');
+  setTimeout(() => { if (Date.now() >= restartAsk) resetRestartBtn(); }, 2600);
+}
+function resetRestartBtn() {
+  restartAsk = 0;
+  restartBtn.textContent = '↻ RESTART';
+  restartBtn.classList.remove('sure');
+}
+function restartGame() {
+  resetRestartBtn();
+  if (stopped) toggleStop();
+  closeMenu();
+  army.until = 0;
+  shots.length = 0; effects.length = 0; bits.length = 0;
+  rocks.forEach(r => r.back = 0);
+  resetGame();
+  hero.dial = 0; hero.face = 1; hero.vy = 0; hero.hurtUntil = 0;
+  flash = 20;
+  banner('NEW GAME!');
 }
 
 function drawStopped() {
