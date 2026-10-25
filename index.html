@@ -1849,6 +1849,16 @@ function updateParty(now) {
 function partyItems(now, items) {
   if (!party.until) return;
   const t = now / 120;
+  // a little Benjji joins the party too, dancing right next to you
+  const mini = { x: hero.x + (hero.x - cam > W / 2 + 100 ? -110 : 110), z: Math.min(DEPTH, hero.z + 12) };
+  items.push({ z: mini.z, draw: () => atDepth(mini.x, mini.z, () => {
+    shadow(mini.x, 16);
+    ctx.save();
+    danceMove(mini.x, now, 2.5);
+    ctx.translate(mini.x, GROUND); ctx.scale(0.6, 0.6); ctx.translate(-mini.x, -GROUND);
+    drawBenjji(mini.x, GROUND);
+    ctx.restore();
+  }) });
   party.spots.forEach((spot, i) => items.push({ z: spot.z, draw: () => atDepth(spot.x, spot.z, () => {
     shadow(spot.x, 22 * spot.a.size);
     ctx.save();
